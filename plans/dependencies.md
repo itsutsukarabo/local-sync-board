@@ -1,14 +1,14 @@
 # 依存関係リスト
 
-## 📦 必須依存関係 (Production)
+## 📦 インストール済み依存関係 (Production)
 
 ### Supabase 関連
 
 ```json
 {
-  "@supabase/supabase-js": "^2.39.0",
-  "@react-native-async-storage/async-storage": "^1.21.0",
-  "react-native-url-polyfill": "^2.0.0"
+  "@supabase/supabase-js": "^2.89.0",
+  "@react-native-async-storage/async-storage": "^2.2.0",
+  "react-native-url-polyfill": "^3.0.0"
 }
 ```
 
@@ -18,35 +18,57 @@
 - **@react-native-async-storage/async-storage**: React Native 用のキーバリューストレージ。Supabase のセッション永続化に使用
 - **react-native-url-polyfill**: React Native 環境で URL API を使用可能にする polyfill
 
-### ナビゲーション (推奨)
+### ナビゲーション (expo-router)
 
 ```json
 {
-  "@react-navigation/native": "^6.1.9",
-  "@react-navigation/native-stack": "^6.9.17",
-  "react-native-screens": "^3.29.0",
-  "react-native-safe-area-context": "^4.8.2"
+  "expo-router": "^6.0.21",
+  "expo-linking": "^8.0.11",
+  "expo-constants": "^18.0.12",
+  "expo-status-bar": "~3.0.9",
+  "react-native-screens": "~4.16.0",
+  "react-native-safe-area-context": "^5.6.2"
 }
 ```
 
 **説明:**
 
-- **@react-navigation/native**: React Native 用のルーティング・ナビゲーションライブラリ
-- **@react-navigation/native-stack**: ネイティブスタックナビゲーター
+- **expo-router**: Expo 用のファイルベースルーティングライブラリ
+- **expo-linking**: ディープリンクと URL スキームのサポート
+- **expo-constants**: アプリの定数とマニフェスト情報へのアクセス
+- **expo-status-bar**: ステータスバーのカスタマイズ
 - **react-native-screens**: ネイティブナビゲーションのパフォーマンス最適化
 - **react-native-safe-area-context**: セーフエリア (ノッチ対応) のサポート
 
-### UI ライブラリ (オプション)
+### アニメーション・UI
 
 ```json
 {
-  "react-native-paper": "^5.11.6"
+  "react-native-reanimated": "~4.1.1",
+  "react-native-worklets-core": "^1.6.2",
+  "react-native-worklets": "^3.1.0"
 }
 ```
 
 **説明:**
 
-- **react-native-paper**: Material Design ベースの UI コンポーネントライブラリ
+- **react-native-reanimated**: 高性能なアニメーションライブラリ
+- **react-native-worklets-core**: Worklets API のコア機能
+- **react-native-worklets**: Reanimated の依存関係
+
+### スタイリング (将来的に使用予定)
+
+```json
+{
+  "nativewind": "^4.2.1",
+  "tailwindcss": "^4.1.18"
+}
+```
+
+**説明:**
+
+- **nativewind**: React Native 用の Tailwind CSS 実装（現在は互換性の問題により未使用）
+- **tailwindcss**: ユーティリティファーストの CSS フレームワーク
 
 ### QR コード機能 (後で追加)
 
@@ -79,37 +101,28 @@
 
 ## 📋 インストールコマンド
 
-### 基本セットアップ (最小構成)
+### ✅ 実際に実行したセットアップ
 
 ```bash
 cd app
+
+# Supabase関連
 npm install @supabase/supabase-js @react-native-async-storage/async-storage react-native-url-polyfill
+
+# expo-router関連
+npm install expo-router react-native-safe-area-context react-native-screens expo-linking expo-constants expo-status-bar
+
+# アニメーション・Worklets（互換性のため）
+npm install react-native-reanimated react-native-worklets-core react-native-worklets --legacy-peer-deps
+
+# 開発依存関係
+npm install --save-dev babel-preset-expo @types/react typescript
 ```
 
-### 推奨セットアップ (ナビゲーション含む)
+### 注意事項
 
-```bash
-cd app
-npm install @supabase/supabase-js @react-native-async-storage/async-storage react-native-url-polyfill
-npm install @react-navigation/native @react-navigation/native-stack
-npm install react-native-screens react-native-safe-area-context
-```
-
-### フルセットアップ (UI ライブラリ含む)
-
-```bash
-cd app
-npm install @supabase/supabase-js @react-native-async-storage/async-storage react-native-url-polyfill
-npm install @react-navigation/native @react-navigation/native-stack
-npm install react-native-screens react-native-safe-area-context
-npm install react-native-paper
-```
-
-### 開発依存関係
-
-```bash
-npm install --save-dev @types/react @types/react-native
-```
+- `--legacy-peer-deps`フラグは、パッケージ間の依存関係の競合を回避するために使用
+- NativeWind は互換性の問題により、現在は React Native 標準の StyleSheet を使用
 
 ## 🔄 後で追加する可能性のある依存関係
 
@@ -149,15 +162,15 @@ npm install --save-dev @types/react @types/react-native
 }
 ```
 
-## 📝 package.json の例
+## 📝 実際の package.json
 
-セットアップ完了後の [`package.json`](app/package.json) は以下のようになります：
+セットアップ完了後の [`package.json`](app/package.json) は以下のようになっています：
 
 ```json
 {
-  "name": "local-sync-board",
+  "name": "app",
   "version": "1.0.0",
-  "main": "node_modules/expo/AppEntry.js",
+  "main": "expo-router/entry",
   "scripts": {
     "start": "expo start",
     "android": "expo start --android",
@@ -165,28 +178,39 @@ npm install --save-dev @types/react @types/react-native
     "web": "expo start --web"
   },
   "dependencies": {
-    "expo": "~50.0.0",
-    "expo-status-bar": "~1.11.1",
-    "react": "18.2.0",
-    "react-native": "0.73.0",
-    "@supabase/supabase-js": "^2.39.0",
-    "@react-native-async-storage/async-storage": "^1.21.0",
-    "react-native-url-polyfill": "^2.0.0",
-    "@react-navigation/native": "^6.1.9",
-    "@react-navigation/native-stack": "^6.9.17",
-    "react-native-screens": "^3.29.0",
-    "react-native-safe-area-context": "^4.8.2",
-    "react-native-paper": "^5.11.6"
+    "@react-native-async-storage/async-storage": "^2.2.0",
+    "@supabase/supabase-js": "^2.89.0",
+    "expo": "~54.0.30",
+    "expo-constants": "^18.0.12",
+    "expo-linking": "^8.0.11",
+    "expo-router": "^6.0.21",
+    "expo-status-bar": "~3.0.9",
+    "nativewind": "^4.2.1",
+    "react": "19.1.0",
+    "react-native": "0.81.5",
+    "react-native-reanimated": "~4.1.1",
+    "react-native-safe-area-context": "^5.6.2",
+    "react-native-screens": "~4.16.0",
+    "react-native-url-polyfill": "^3.0.0",
+    "react-native-worklets-core": "^1.6.2",
+    "react-native-worklets": "^3.1.0",
+    "tailwindcss": "^4.1.18"
   },
   "devDependencies": {
-    "@babel/core": "^7.20.0",
-    "@types/react": "~18.2.45",
-    "@types/react-native": "^0.72.8",
-    "typescript": "^5.3.3"
+    "@types/react": "~19.1.0",
+    "babel-preset-expo": "^54.0.9",
+    "typescript": "~5.9.2"
   },
   "private": true
 }
 ```
+
+**重要な変更点:**
+
+- `main`エントリーポイントを`expo-router/entry`に変更
+- Expo SDK 54 を使用
+- React 19.1.0 を使用
+- expo-router によるファイルベースルーティング
 
 ## ⚠️ 注意事項
 
