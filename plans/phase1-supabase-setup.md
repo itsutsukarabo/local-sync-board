@@ -243,12 +243,12 @@ display_name: null (Welcome画面で設定予定)
 
 以下をすべて確認してから、次のステップ（コード実装）に進んでください：
 
-- [ ] Anonymous Auth が有効化されている
-- [ ] `profiles` テーブルが作成されている
-- [ ] 6 つのカラム（id, display_name, avatar_url, current_room_id, created_at, updated_at）が存在する
-- [ ] RLS が有効化されている（Table Editor で確認）
-- [ ] 4 つの RLS ポリシーが設定されている
-- [ ] トリガー（updated_at 自動更新、新規ユーザー自動作成）が設定されている
+- [✅] Anonymous Auth が有効化されている
+- [✅] `profiles` テーブルが作成されている
+- [✅] 6 つのカラム（id, display_name, avatar_url, current_room_id, created_at, updated_at）が存在する
+- [✅] RLS が有効化されている（Table Editor で確認）
+- [✅] 4 つの RLS ポリシーが設定されている
+- [✅] トリガー（updated_at 自動更新、新規ユーザー自動作成）が設定されている
 
 ---
 
