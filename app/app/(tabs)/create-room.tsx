@@ -45,21 +45,8 @@ export default function CreateRoomScreen() {
         return;
       }
 
-      // 成功メッセージを表示
-      Alert.alert(
-        "ルーム作成成功",
-        `ルームコード: ${room.room_code}\n\nこのコードを他のプレイヤーに共有してください。`,
-        [
-          {
-            text: "OK",
-            onPress: () => {
-              // TODO: ゲーム画面に遷移
-              console.log("Room created:", room);
-              router.push("/");
-            },
-          },
-        ]
-      );
+      // ゲーム画面に遷移
+      router.push(`/game/${room.id}`);
     } catch (error) {
       console.error("Error creating room:", error);
       Alert.alert("エラー", "ルームの作成中に問題が発生しました");

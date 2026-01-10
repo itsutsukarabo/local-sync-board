@@ -58,7 +58,13 @@ export async function createRoom(
       );
     }
 
-    // ルームを作成
+    // ホストの初期状態を作成
+    const hostInitialState: Record<string, number> = {};
+    template.variables.forEach((variable) => {
+      hostInitialState[variable.key] = variable.initial;
+    });
+
+    // ルームを作成（ホストを current_state に追加）
     const { data, error } = await supabase
       .from("rooms")
       .insert({
@@ -66,7 +72,9 @@ export async function createRoom(
         host_user_id: user.id,
         status: "waiting",
         template: template,
-        current_state: {},
+        current_state: {
+          [user.id]: hostInitialState,
+        },
       })
       .select()
       .single();
@@ -170,6 +178,8 @@ export async function joinRoom(
 
     // プレイヤーをルームの状態に追加
     const currentState = room.current_state || {};
+    console.log("Current state before join:", currentState);
+    console.log("User ID:", user.id);
 
     // 既に参加している場合はスキップ
     if (!currentState[user.id]) {
@@ -180,16 +190,33 @@ export async function joinRoom(
       });
 
       currentState[user.id] = initialState;
+      console.log("Updated state:", currentState);
 
-      // ルームの状態を更新
-      const { error: updateError } = await supabase
+      // ルームの状態を更新（更新後のデータを直接取得）
+      const { data: updateData, error: updateError } = await supabase
         .from("rooms")
         .update({ current_state: currentState })
-        .eq("id", room.id);
+        .eq("id", room.id)
+        .select()
+        .single();
 
       if (updateError) {
+        console.error("Update error:", updateError);
         throw updateError;
       }
+
+      console.log("Room state updated successfully");
+      console.log("Updated room data:", updateData);
+
+      // プロファイルのcurrent_room_idを更新
+      await supabase
+        .from("profiles")
+        .update({ current_room_id: room.id })
+        .eq("id", user.id);
+
+      return { room: updateData as Room, error: null };
+    } else {
+      console.log("User already in room");
     }
 
     // プロファイルのcurrent_room_idを更新
