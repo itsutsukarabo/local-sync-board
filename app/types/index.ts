@@ -53,6 +53,14 @@ export interface AuthContextType {
 // ============================================
 
 /**
+ * 座席情報
+ */
+export interface SeatInfo {
+  userId: string | null;
+  status: "active" | "inactive";
+}
+
+/**
  * ゲームセッション (rooms テーブル)
  */
 export interface Room {
@@ -62,16 +70,25 @@ export interface Room {
   status: "waiting" | "playing" | "finished";
   template: GameTemplate;
   current_state: GameState;
+  seats: (SeatInfo | null)[]; // 座席配列 [Bottom, Right, Top, Left]
   created_at: string;
 }
 
 /**
- * ゲームテンプレート定義
+ * レイアウトモード
+ */
+export type LayoutMode = "list" | "mahjong";
+
+/**
+ * ゲームテンプレート定義（拡張版）
  * ゲームのルール（変数とアクション）を定義
  */
 export interface GameTemplate {
   variables: Variable[];
   actions: Action[];
+  layoutMode?: LayoutMode; // デフォルトは "list"
+  maxPlayers?: number; // 最大プレイヤー数（麻雀モードでは4）
+  potEnabled?: boolean; // 供託金機能の有効化
 }
 
 /**
@@ -94,12 +111,23 @@ export interface Action {
 }
 
 /**
- * ゲーム状態
- * 全プレイヤーの現在の値を保持
+ * 供託金状態
  */
-export interface GameState {
-  [userId: string]: PlayerState;
+export interface PotState {
+  score: number; // 供託金の合計
+  riichi?: number; // リーチ棒の本数
 }
+
+/**
+ * ゲーム状態（拡張版）
+ * 全プレイヤーの現在の値を保持
+ * 注意: "__pot__"は予約キーとして使用
+ */
+export type GameState = {
+  __pot__?: PotState; // 供託金エリア（予約キー）
+} & {
+  [userId: string]: PlayerState; // プレイヤー
+};
 
 /**
  * プレイヤー状態
@@ -108,6 +136,29 @@ export interface GameState {
 export interface PlayerState {
   [key: string]: number | string | undefined;
   _status?: string;
+}
+
+/**
+ * プレイヤーの座席位置
+ */
+export type SeatPosition = "bottom" | "top" | "left" | "right";
+
+/**
+ * 座席配置マップ
+ */
+export interface SeatMap {
+  [userId: string]: SeatPosition;
+}
+
+/**
+ * スコア移動リクエスト
+ */
+export interface TransferScoreRequest {
+  room_id: string;
+  from_id: string; // "__pot__" または userId
+  to_id: string; // "__pot__" または userId
+  amount: number;
+  variable?: string; // 移動する変数（デフォルトは "score"）
 }
 
 /**

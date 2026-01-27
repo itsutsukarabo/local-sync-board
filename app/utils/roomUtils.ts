@@ -50,6 +50,9 @@ export function validateRoomCode(code: string): {
  * デフォルトのゲームテンプレート（麻雀）
  */
 export const DEFAULT_MAHJONG_TEMPLATE: GameTemplate = {
+  layoutMode: "mahjong", // 麻雀モードを指定
+  maxPlayers: 4,
+  potEnabled: true,
   variables: [
     { key: "score", label: "点数", initial: 25000 },
     { key: "riichi", label: "リーチ棒", initial: 0 },
@@ -71,6 +74,7 @@ export const DEFAULT_MAHJONG_TEMPLATE: GameTemplate = {
  * シンプルなスコアテンプレート
  */
 export const SIMPLE_SCORE_TEMPLATE: GameTemplate = {
+  layoutMode: "list", // リストモード（デフォルト）
   variables: [{ key: "score", label: "スコア", initial: 0 }],
   actions: [
     { label: "+1", calc: "score + 1" },

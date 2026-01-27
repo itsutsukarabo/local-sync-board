@@ -17,6 +17,19 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useRoomRealtime } from "../../hooks/useRoomRealtime";
 import { useAuth } from "../../hooks/useAuth";
+import PlayerList from "../../components/game/PlayerList";
+import ActionButtons from "../../components/game/ActionButtons";
+import MahjongTable from "../../components/game/MahjongTable";
+import { Action } from "../../types";
+import {
+  joinRoom,
+  leaveRoom,
+  updateRoomStatus,
+  transferScore,
+  joinSeat,
+  leaveSeat,
+} from "../../lib/roomApi";
+import { supabase } from "../../lib/supabase";
 
 export default function GameScreen() {
   const router = useRouter();
@@ -70,15 +83,242 @@ export default function GameScreen() {
   }
 
   const isHost = user?.id === room.host_user_id;
-  const players = Object.keys(room.current_state || {});
+  const players = Object.keys(room.current_state || {}).filter(
+    (id) => id !== "__pot__"
+  );
   const playerCount = players.length;
+  const isUserInGame = user?.id ? players.includes(user.id) : false;
+
+  // レイアウトモードを取得
+  const layoutMode = room.template.layoutMode || "list";
+  const isPotEnabled = room.template.potEnabled || false;
 
   // デバッグログ
   console.log("Game screen - Room:", room.id);
+  console.log("Game screen - Template:", room.template);
+  console.log("Game screen - Layout Mode:", layoutMode);
+  console.log("Game screen - Pot Enabled:", isPotEnabled);
   console.log("Game screen - Current state:", room.current_state);
   console.log("Game screen - Players:", players);
   console.log("Game screen - Player count:", playerCount);
   console.log("Game screen - Current user:", user?.id);
+  console.log("Game screen - Is user in game:", isUserInGame);
+
+  // アクション実行ハンドラー
+  const handleActionPress = (action: Action) => {
+    // TODO: アクション実行処理を実装
+    Alert.alert(
+      "アクション実行",
+      `${action.label} を実行します\n計算式: ${action.calc}`,
+      [
+        { text: "キャンセル", style: "cancel" },
+        {
+          text: "実行",
+          onPress: () => {
+            console.log("Action executed:", action);
+            // ここで実際のスコア更新処理を実装
+          },
+        },
+      ]
+    );
+  };
+
+  // ゲーム開始ハンドラー
+  const handleStartGame = () => {
+    if (!room) return;
+
+    // プレイヤーが1人以上いるかチェック
+    const playerCount = Object.keys(room.current_state || {}).length;
+    if (playerCount === 0) {
+      Alert.alert(
+        "エラー",
+        "ゲームを開始するには、少なくとも1人のプレイヤーが必要です"
+      );
+      return;
+    }
+
+    Alert.alert("確認", "ゲームを開始しますか？", [
+      { text: "キャンセル", style: "cancel" },
+      {
+        text: "開始",
+        onPress: async () => {
+          try {
+            // ルームのステータスを"playing"に更新
+            const { error } = await updateRoomStatus(room.id, "playing");
+
+            if (error) {
+              Alert.alert("エラー", error.message);
+              return;
+            }
+
+            console.log("Game started successfully");
+            Alert.alert("成功", "ゲームが開始されました！");
+          } catch (error) {
+            console.error("Error starting game:", error);
+            Alert.alert("エラー", "ゲームの開始に失敗しました");
+          }
+        },
+      },
+    ]);
+  };
+
+  // ゲーム終了ハンドラー
+  const handleEndGame = () => {
+    if (!room) return;
+
+    Alert.alert("確認", "ゲームを終了しますか？", [
+      { text: "キャンセル", style: "cancel" },
+      {
+        text: "終了",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            // ルームのステータスを"finished"に更新
+            const { error } = await updateRoomStatus(room.id, "finished");
+
+            if (error) {
+              Alert.alert("エラー", error.message);
+              return;
+            }
+
+            console.log("Game ended successfully");
+            Alert.alert("成功", "ゲームが終了しました");
+          } catch (error) {
+            console.error("Error ending game:", error);
+            Alert.alert("エラー", "ゲームの終了に失敗しました");
+          }
+        },
+      },
+    ]);
+  };
+
+  // ゲーム参加ハンドラー
+  const handleJoinGame = async () => {
+    if (!room || !user) return;
+
+    try {
+      // joinRoom関数を使用してゲームに参加
+      const { error } = await joinRoom(room.room_code);
+
+      if (error) {
+        Alert.alert("エラー", error.message);
+        return;
+      }
+
+      console.log("User joined game successfully");
+    } catch (error) {
+      console.error("Error joining game:", error);
+      Alert.alert("エラー", "ゲームへの参加に失敗しました");
+    }
+  };
+
+  // ゲーム退出ハンドラー
+  const handleLeaveGame = async () => {
+    if (!room || !user) return;
+
+    Alert.alert("確認", "ゲームから退出しますか？\n（ルームには残ります）", [
+      { text: "キャンセル", style: "cancel" },
+      {
+        text: "退出",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            // current_stateから自分を削除
+            const currentState = { ...room.current_state };
+            delete currentState[user.id];
+
+            const { error } = await supabase
+              .from("rooms")
+              .update({ current_state: currentState })
+              .eq("id", room.id);
+
+            if (error) {
+              throw error;
+            }
+
+            console.log("User left game successfully");
+          } catch (error) {
+            console.error("Error leaving game:", error);
+            Alert.alert("エラー", "ゲームからの退出に失敗しました");
+          }
+        },
+      },
+    ]);
+  };
+
+  // スコア移動ハンドラー
+  const handleTransfer = async (
+    fromId: string,
+    toId: string,
+    amount: number
+  ) => {
+    if (!room) return;
+
+    try {
+      const { error } = await transferScore(room.id, fromId, toId, amount);
+
+      if (error) {
+        Alert.alert("エラー", error.message);
+        return;
+      }
+
+      console.log("Score transferred successfully");
+    } catch (error) {
+      console.error("Error transferring score:", error);
+      Alert.alert("エラー", "スコアの移動に失敗しました");
+    }
+  };
+
+  // 座席に着席するハンドラー
+  const handleJoinSeat = async (seatIndex: number) => {
+    if (!room || !user) return;
+
+    try {
+      const { error } = await joinSeat(room.id, seatIndex);
+
+      if (error) {
+        Alert.alert("エラー", error.message);
+        return;
+      }
+
+      console.log("User joined seat successfully");
+    } catch (error) {
+      console.error("Error joining seat:", error);
+      Alert.alert("エラー", "座席への着席に失敗しました");
+    }
+  };
+
+  // 座席から離席するハンドラー
+  const handleLeaveSeat = async () => {
+    if (!room || !user) return;
+
+    Alert.alert("確認", "座席から離席しますか？", [
+      { text: "キャンセル", style: "cancel" },
+      {
+        text: "離席",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            const { error } = await leaveSeat(room.id);
+
+            if (error) {
+              Alert.alert("エラー", error.message);
+              return;
+            }
+
+            console.log("User left seat successfully");
+          } catch (error) {
+            console.error("Error leaving seat:", error);
+            Alert.alert("エラー", "座席からの離席に失敗しました");
+          }
+        },
+      },
+    ]);
+  };
+
+  // ユーザーが座席に座っているかチェック
+  const isUserSeated =
+    room?.seats?.some((seat) => seat && seat.userId === user?.id) || false;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -120,97 +360,124 @@ export default function GameScreen() {
         </View>
       </View>
 
-      {/* プレイヤー一覧 */}
-      <ScrollView style={styles.content}>
-        <Text style={styles.sectionTitle}>プレイヤー</Text>
-
-        {playerCount === 0 ? (
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyText}>まだプレイヤーがいません</Text>
-            <Text style={styles.emptySubtext}>
-              ルームコードを共有して参加を待ちましょう
-            </Text>
-          </View>
-        ) : (
-          <View style={styles.playerList}>
-            {players.map((playerId) => {
-              const playerState = room.current_state[playerId];
-              return (
-                <View key={playerId} style={styles.playerCard}>
-                  <View style={styles.playerHeader}>
-                    <Text style={styles.playerName}>
-                      {playerId === user?.id
-                        ? "あなた"
-                        : `プレイヤー ${playerId.slice(0, 8)}`}
-                      {playerId === room.host_user_id && " 👑"}
-                    </Text>
-                  </View>
-                  <View style={styles.playerStats}>
-                    {room.template.variables.map((variable) => (
-                      <View key={variable.key} style={styles.statItem}>
-                        <Text style={styles.statLabel}>{variable.label}</Text>
-                        <Text style={styles.statValue}>
-                          {playerState[variable.key] ?? variable.initial}
-                        </Text>
-                      </View>
-                    ))}
-                  </View>
-                </View>
-              );
-            })}
-          </View>
-        )}
-
-        {/* アクションボタン（プレイ中のみ） */}
-        {room.status === "playing" && (
-          <View style={styles.actionSection}>
-            <Text style={styles.sectionTitle}>アクション</Text>
-            <View style={styles.actionButtons}>
-              {room.template.actions.map((action, index) => (
-                <TouchableOpacity
-                  key={index}
-                  style={styles.actionButton}
-                  onPress={() => {
-                    // TODO: アクション実行処理
-                    Alert.alert("アクション", `${action.label} を実行`);
-                  }}
-                >
-                  <Text style={styles.actionButtonText}>{action.label}</Text>
-                </TouchableOpacity>
-              ))}
+      {/* メインコンテンツ */}
+      {layoutMode === "mahjong" ? (
+        // 麻雀モード: 固定レイアウト + 座席選択システム
+        <View style={styles.mahjongContainer}>
+          {/* 離席ボタン（座席に座っている場合のみ表示） */}
+          {user && isUserSeated && (
+            <View style={styles.mahjongParticipationSection}>
+              <TouchableOpacity
+                style={styles.mahjongLeaveButton}
+                onPress={handleLeaveSeat}
+              >
+                <Text style={styles.mahjongLeaveButtonText}>
+                  🚪 座席から離席
+                </Text>
+              </TouchableOpacity>
             </View>
-          </View>
-        )}
+          )}
 
-        {/* ホスト専用コントロール */}
-        {isHost && (
-          <View style={styles.hostControls}>
-            <Text style={styles.sectionTitle}>ホストコントロール</Text>
-            {room.status === "waiting" && (
-              <TouchableOpacity
-                style={styles.controlButton}
-                onPress={() => {
-                  // TODO: ゲーム開始処理
-                  Alert.alert("確認", "ゲームを開始しますか？");
-                }}
-              >
-                <Text style={styles.controlButtonText}>ゲーム開始</Text>
-              </TouchableOpacity>
-            )}
-            {room.status === "playing" && (
-              <TouchableOpacity
-                style={[styles.controlButton, styles.controlButtonDanger]}
-                onPress={() => {
-                  // TODO: ゲーム終了処理
-                  Alert.alert("確認", "ゲームを終了しますか？");
-                }}
-              >
-                <Text style={styles.controlButtonText}>ゲーム終了</Text>
-              </TouchableOpacity>
-            )}
+          {/* 麻雀テーブル（固定サイズ） */}
+          <View style={styles.mahjongTableWrapper}>
+            <MahjongTable
+              gameState={room.current_state || {}}
+              variables={room.template.variables}
+              currentUserId={user?.id || ""}
+              hostUserId={room.host_user_id}
+              seats={room.seats || [null, null, null, null]}
+              onTransfer={handleTransfer}
+              onJoinSeat={handleJoinSeat}
+              isPotEnabled={isPotEnabled}
+            />
           </View>
-        )}
-      </ScrollView>
+
+          {/* ホスト専用コントロール（麻雀モード） */}
+          {isHost && (
+            <View style={styles.mahjongHostControls}>
+              <Text style={styles.sectionTitle}>ホストコントロール</Text>
+              {room.status === "waiting" && (
+                <TouchableOpacity
+                  style={styles.controlButton}
+                  onPress={handleStartGame}
+                >
+                  <Text style={styles.controlButtonText}>ゲーム開始</Text>
+                </TouchableOpacity>
+              )}
+              {room.status === "playing" && (
+                <TouchableOpacity
+                  style={[styles.controlButton, styles.controlButtonDanger]}
+                  onPress={handleEndGame}
+                >
+                  <Text style={styles.controlButtonText}>ゲーム終了</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+        </View>
+      ) : (
+        // リストモード: スクロール可能なリスト
+        <ScrollView style={styles.content}>
+          {/* ゲーム参加/退出ボタン */}
+          {user && (
+            <View style={styles.participationSection}>
+              {!isUserInGame ? (
+                <TouchableOpacity
+                  style={styles.joinButton}
+                  onPress={handleJoinGame}
+                >
+                  <Text style={styles.joinButtonText}>🎮 ゲームに参加</Text>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  style={styles.leaveButton}
+                  onPress={handleLeaveGame}
+                >
+                  <Text style={styles.leaveButtonText}>🚪 ゲームから退出</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+
+          <PlayerList
+            gameState={room.current_state || {}}
+            variables={room.template.variables}
+            currentUserId={user?.id}
+            hostUserId={room.host_user_id}
+          />
+
+          {/* アクションボタン（プレイ中のみ、参加者のみ） */}
+          {room.status === "playing" && isUserInGame && (
+            <ActionButtons
+              actions={room.template.actions}
+              onActionPress={handleActionPress}
+            />
+          )}
+
+          {/* ホスト専用コントロール */}
+          {isHost && (
+            <View style={styles.hostControls}>
+              <Text style={styles.sectionTitle}>ホストコントロール</Text>
+              {room.status === "waiting" && (
+                <TouchableOpacity
+                  style={styles.controlButton}
+                  onPress={handleStartGame}
+                >
+                  <Text style={styles.controlButtonText}>ゲーム開始</Text>
+                </TouchableOpacity>
+              )}
+              {room.status === "playing" && (
+                <TouchableOpacity
+                  style={[styles.controlButton, styles.controlButtonDanger]}
+                  onPress={handleEndGame}
+                >
+                  <Text style={styles.controlButtonText}>ゲーム終了</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+        </ScrollView>
+      )}
     </SafeAreaView>
   );
 }
@@ -300,82 +567,106 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 16,
   },
+  mahjongScrollContainer: {
+    flex: 1,
+    backgroundColor: "#f9fafb",
+  },
+  mahjongContainer: {
+    flex: 1,
+    backgroundColor: "#f9fafb",
+  },
+  mahjongTableWrapper: {
+    flex: 1,
+    minHeight: 400,
+  },
+  mahjongParticipationSection: {
+    padding: 12,
+    backgroundColor: "#ffffff",
+    borderBottomWidth: 1,
+    borderBottomColor: "#e5e7eb",
+  },
+  mahjongHostControls: {
+    padding: 16,
+    backgroundColor: "#ffffff",
+    marginHorizontal: 16,
+    marginBottom: 16,
+    borderRadius: 12,
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 3,
+  },
+  mahjongJoinButton: {
+    backgroundColor: "#10b981",
+    padding: 12,
+    borderRadius: 8,
+    alignItems: "center",
+  },
+  mahjongJoinButtonText: {
+    color: "#ffffff",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  mahjongLeaveButton: {
+    backgroundColor: "#f59e0b",
+    padding: 12,
+    borderRadius: 8,
+    alignItems: "center",
+  },
+  mahjongLeaveButtonText: {
+    color: "#ffffff",
+    fontSize: 14,
+    fontWeight: "600",
+  },
   sectionTitle: {
     fontSize: 18,
     fontWeight: "bold",
     color: "#1f2937",
     marginBottom: 12,
   },
-  emptyState: {
-    padding: 32,
-    alignItems: "center",
+  participationSection: {
+    marginBottom: 16,
   },
-  emptyText: {
-    fontSize: 16,
-    color: "#6b7280",
-    marginBottom: 8,
-  },
-  emptySubtext: {
-    fontSize: 14,
-    color: "#9ca3af",
-    textAlign: "center",
-  },
-  playerList: {
-    gap: 12,
-  },
-  playerCard: {
-    backgroundColor: "#ffffff",
-    borderRadius: 12,
+  joinButton: {
+    backgroundColor: "#10b981",
     padding: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: "#e5e7eb",
+    borderRadius: 12,
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 3,
   },
-  playerHeader: {
-    marginBottom: 12,
-  },
-  playerName: {
+  joinButtonText: {
+    color: "#ffffff",
     fontSize: 16,
     fontWeight: "600",
-    color: "#1f2937",
   },
-  playerStats: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 12,
+  leaveButton: {
+    backgroundColor: "#f59e0b",
+    padding: 16,
+    borderRadius: 12,
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 3,
   },
-  statItem: {
-    flex: 1,
-    minWidth: 100,
-  },
-  statLabel: {
-    fontSize: 12,
-    color: "#6b7280",
-    marginBottom: 4,
-  },
-  statValue: {
-    fontSize: 20,
-    fontWeight: "bold",
-    color: "#1f2937",
-  },
-  actionSection: {
-    marginTop: 24,
-  },
-  actionButtons: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-  },
-  actionButton: {
-    backgroundColor: "#3b82f6",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 8,
-    marginBottom: 8,
-  },
-  actionButtonText: {
+  leaveButtonText: {
     color: "#ffffff",
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: "600",
   },
   hostControls: {

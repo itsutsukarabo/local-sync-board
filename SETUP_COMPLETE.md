@@ -29,27 +29,55 @@ local-sync-board/
 │   ├── dependencies.md
 │   └── implementation-roadmap.md
 │
+├── progress/                       # 実装進捗ドキュメント ✨
+│   ├── PHASE1_COMPLETE.md
+│   ├── PHASE2_*.md
+│   ├── PHASE3_*.md
+│   └── ...
+│
+├── supabase/                       # Supabase設定
+│   └── migrations/                 # データベースマイグレーション
+│
 └── app/                            # Expo プロジェクト ✨
-    ├── App.tsx                     # エントリーポイント
+    ├── app.json                    # Expo設定
     ├── package.json                # 依存関係
     ├── tsconfig.json               # TypeScript 設定
+    ├── babel.config.js             # Babel設定（Reanimated plugin含む）
     ├── .env.example                # 環境変数テンプレート
     ├── README.md                   # アプリのドキュメント
     │
+    ├── app/                        # Expo Router (ファイルベースルーティング)
+    │   ├── _layout.tsx             # ルートレイアウト
+    │   ├── (auth)/                 # 認証グループ
+    │   ├── (tabs)/                 # タブグループ
+    │   └── game/                   # ゲーム画面
+    │
     ├── lib/                        # ライブラリ・設定
-    │   └── supabase.ts             # Supabase クライアント ✨
+    │   ├── supabase.ts             # Supabase クライアント ✨
+    │   └── roomApi.ts              # ルーム管理API
     │
     ├── types/                      # TypeScript 型定義
     │   └── index.ts                # 共通型定義 ✨
     │
-    ├── screens/                    # 画面コンポーネント (空)
-    ├── components/                 # 再利用可能なコンポーネント (空)
+    ├── components/                 # 再利用可能なコンポーネント
     │   ├── common/
     │   ├── room/
-    │   └── game/
-    ├── hooks/                      # カスタムフック (空)
-    ├── contexts/                   # Context API (空)
-    └── utils/                      # ユーティリティ関数 (空)
+    │   └── game/                   # ゲームコンポーネント
+    │       ├── MahjongTable.tsx
+    │       ├── MahjongPlayerCard.tsx
+    │       ├── PotArea.tsx
+    │       └── PaymentModal.tsx
+    │
+    ├── hooks/                      # カスタムフック
+    │   ├── useAuth.ts
+    │   └── useRoomRealtime.ts
+    │
+    ├── contexts/                   # Context API
+    │   └── AuthContext.tsx
+    │
+    └── utils/                      # ユーティリティ関数
+        ├── roomUtils.ts
+        └── seatUtils.ts
 ```
 
 ## 🎯 次のステップ
@@ -88,18 +116,56 @@ Phase 1 (認証機能) から実装を開始します。詳細は [`plans/implem
 
 ## 📦 インストール済みの依存関係
 
-### 必須パッケージ
+### 必須パッケージ（Core）
 
-- ✅ `@supabase/supabase-js` - Supabase クライアント
-- ✅ `@react-native-async-storage/async-storage` - ローカルストレージ
-- ✅ `react-native-url-polyfill` - URL API polyfill
+- ✅ `expo` (~54.0.31) - Expo フレームワーク
+- ✅ `react` (19.1.0) - React ライブラリ
+- ✅ `react-native` (0.81.5) - React Native フレームワーク
+
+### 必須パッケージ（Supabase）
+
+- ✅ `@supabase/supabase-js` (^2.89.0) - Supabase クライアント
+- ✅ `@react-native-async-storage/async-storage` (^2.2.0) - ローカルストレージ（Supabase 認証に必要）
+- ✅ `react-native-url-polyfill` (^3.0.0) - URL API polyfill（Supabase に必要）
+
+### 必須パッケージ（ナビゲーション）
+
+- ✅ `expo-router` (^6.0.21) - ファイルベースルーティング
+- ✅ `expo-linking` (^8.0.11) - ディープリンク対応
+- ✅ `expo-constants` (~18.0.13) - アプリ定数へのアクセス
+- ✅ `expo-status-bar` (~3.0.9) - ステータスバー制御
+- ✅ `react-native-safe-area-context` (^5.6.2) - セーフエリア対応
+- ✅ `react-native-screens` (~4.16.0) - ネイティブ画面管理
+
+### 必須パッケージ（ジェスチャー＆アニメーション）
+
+- ✅ `react-native-gesture-handler` (~2.28.0) - ジェスチャー処理（ドラッグ&ドロップに必要）
+- ✅ `react-native-reanimated` (~4.1.1) - 高性能アニメーション（ドラッグ&ドロップに必要）
+- ✅ `react-native-worklets` (^0.5.1) - Worklets サポート（Reanimated に必要）
+- ✅ `react-native-worklets-core` (^1.6.2) - Worklets コア機能
+
+### 必須パッケージ（スタイリング）
+
+- ✅ `nativewind` (^4.2.1) - Tailwind CSS for React Native
+- ✅ `tailwindcss` (^4.1.18) - Tailwind CSS
+
+### 開発用パッケージ
+
+- ✅ `@types/react` (~19.1.0) - React 型定義
+- ✅ `babel-preset-expo` (^54.0.9) - Expo Babel プリセット
+- ✅ `typescript` (~5.9.2) - TypeScript コンパイラ
+
+### 重要な設定ファイル
+
+- ✅ [`babel.config.js`](app/babel.config.js) - `react-native-reanimated/plugin` を最後に配置（必須）
+- ✅ [`tsconfig.json`](app/tsconfig.json) - `jsx: "react-native"`, `esModuleInterop: true` を設定
+- ✅ [`app/_layout.tsx`](app/app/_layout.tsx) - `GestureHandlerRootView` でアプリ全体をラップ
 
 ### 今後追加する可能性のあるパッケージ
 
-- `@react-navigation/native` - ナビゲーション
-- `@react-navigation/native-stack` - スタックナビゲーター
-- `react-native-paper` - UI コンポーネント
 - `expo-camera` - QR コードスキャン
+- `expo-image-picker` - 画像選択
+- `expo-notifications` - プッシュ通知
 
 ## 🔧 TypeScript 設定
 
@@ -116,6 +182,7 @@ import Button from "@components/common/Button";
 
 - **設計ドキュメント**: [`docs/`](docs/) ディレクトリ
 - **実装計画**: [`plans/`](plans/) ディレクトリ
+- **実装進捗**: [`progress/`](progress/) ディレクトリ ✨
 - **アプリドキュメント**: [`app/README.md`](app/README.md)
 
 ## 🎨 実装フェーズ

@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { Stack, useRouter, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { AuthProvider } from "../contexts/AuthContext";
 import { useAuth } from "../hooks/useAuth";
 import { View, ActivityIndicator, StyleSheet } from "react-native";
@@ -57,17 +58,19 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
  */
 export default function RootLayout() {
   return (
-    <AuthProvider>
-      <AuthGuard>
-        <StatusBar style="auto" />
-        <Stack
-          screenOptions={{
-            headerShown: false,
-            contentStyle: { backgroundColor: "#ffffff" },
-          }}
-        />
-      </AuthGuard>
-    </AuthProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <AuthProvider>
+        <AuthGuard>
+          <StatusBar style="auto" />
+          <Stack
+            screenOptions={{
+              headerShown: false,
+              contentStyle: { backgroundColor: "#ffffff" },
+            }}
+          />
+        </AuthGuard>
+      </AuthProvider>
+    </GestureHandlerRootView>
   );
 }
 
