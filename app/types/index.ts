@@ -80,12 +80,20 @@ export interface Room {
 export type LayoutMode = "list" | "mahjong";
 
 /**
+ * 権限キー定義
+ * - transfer_score: プレイヤー間でのスコア移動
+ * - retrieve_pot: 供託金（Pot）からの回収
+ * - finalize_game: ゲーム終了・精算操作（ホスト専用）
+ */
+export type PermissionKey = "transfer_score" | "retrieve_pot" | "finalize_game";
+
+/**
  * ゲームテンプレート定義（拡張版）
- * ゲームのルール（変数とアクション）を定義
+ * ゲームのルール（変数と権限）を定義
  */
 export interface GameTemplate {
   variables: Variable[];
-  actions: Action[];
+  permissions: PermissionKey[]; // 許可された操作権限のリスト
   layoutMode?: LayoutMode; // デフォルトは "list"
   maxPlayers?: number; // 最大プレイヤー数（麻雀モードでは4）
   potEnabled?: boolean; // 供託金機能の有効化
@@ -102,8 +110,8 @@ export interface Variable {
 }
 
 /**
- * アクション定義
- * 例: { label: "リーチ", calc: "score - 1000" }
+ * @deprecated Use PermissionKey instead
+ * 旧アクション定義（後方互換性のため残す）
  */
 export interface Action {
   label: string;
@@ -119,17 +127,6 @@ export interface PotState {
 }
 
 /**
- * ゲーム状態（拡張版）
- * 全プレイヤーの現在の値を保持
- * 注意: "__pot__"は予約キーとして使用
- */
-export type GameState = {
-  __pot__?: PotState; // 供託金エリア（予約キー）
-} & {
-  [userId: string]: PlayerState; // プレイヤー
-};
-
-/**
  * プレイヤー状態
  * 各プレイヤーの変数値とステータス
  */
@@ -137,6 +134,38 @@ export interface PlayerState {
   [key: string]: number | string | undefined;
   _status?: string;
 }
+
+/**
+ * ゲームステートのスナップショット（履歴保存用）
+ * history自体を除いた状態
+ */
+export interface GameStateSnapshot {
+  __pot__?: PotState;
+  [userId: string]: PlayerState | PotState | undefined;
+}
+
+/**
+ * 履歴エントリ
+ * 各操作の記録と、その時点のスナップショットを保持
+ */
+export interface HistoryEntry {
+  id: string; // UUID
+  timestamp: number; // Unix timestamp (ms)
+  message: string; // ログ表示用 (例: "UserA → Pot: 1000")
+  snapshot: GameStateSnapshot; // その時点のステート（操作前の状態）
+}
+
+/**
+ * ゲーム状態（拡張版）
+ * 全プレイヤーの現在の値を保持
+ * 注意: "__pot__", "__history__"は予約キーとして使用
+ */
+export type GameState = {
+  __pot__?: PotState; // 供託金エリア（予約キー）
+  __history__?: HistoryEntry[]; // 履歴配列（時系列順）
+} & {
+  [userId: string]: PlayerState; // プレイヤー
+};
 
 /**
  * プレイヤーの座席位置

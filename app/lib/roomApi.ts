@@ -9,8 +9,30 @@ import {
   GameTemplate,
   CreateRoomRequest,
   JoinRoomRequest,
+  HistoryEntry,
+  GameStateSnapshot,
 } from "../types";
 import { generateRoomCode } from "../utils/roomUtils";
+
+/**
+ * UUID生成（簡易版）
+ */
+function generateUUID(): string {
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
+/**
+ * 履歴を除いたスナップショットを作成（ディープコピー）
+ */
+function createSnapshot(currentState: any): GameStateSnapshot {
+  const { __history__, ...rest } = currentState;
+  // ディープコピーで参照を切る
+  return JSON.parse(JSON.stringify(rest)) as GameStateSnapshot;
+}
 
 /**
  * 新しいルームを作成
@@ -317,19 +339,23 @@ export async function updateRoomStatus(
 }
 
 /**
- * スコアを移動（トランザクション更新）
+ * スコアを移動（トランザクション更新 + 履歴保存）
  * @param roomId - ルームID
  * @param fromId - 送信元ID（"__pot__" またはユーザーID）
  * @param toId - 送信先ID（"__pot__" またはユーザーID）
  * @param amount - 移動する金額
  * @param variable - 移動する変数（デフォルトは "score"）
+ * @param fromName - 送信元の表示名（履歴用、省略時はID）
+ * @param toName - 送信先の表示名（履歴用、省略時はID）
  */
 export async function transferScore(
   roomId: string,
   fromId: string,
   toId: string,
   amount: number,
-  variable: string = "score"
+  variable: string = "score",
+  fromName?: string,
+  toName?: string
 ): Promise<{ error: Error | null }> {
   try {
     // 1. 最新の current_state を取得（重要！通信ラグ対策）
@@ -347,8 +373,13 @@ export async function transferScore(
       throw new Error("ルームが見つかりません");
     }
 
-    // 2. 最新データを元に計算
+    // 2. 操作前のスナップショットを作成（履歴用）
+    const beforeSnapshot = createSnapshot(room.current_state);
+    console.log("[transferScore] beforeSnapshot:", JSON.stringify(beforeSnapshot, null, 2));
+
+    // 3. 最新データを元に計算
     const currentState = { ...room.current_state };
+    console.log("[transferScore] currentState (before modification):", JSON.stringify(currentState, null, 2));
 
     // Potからの移動
     if (fromId === "__pot__") {
@@ -381,7 +412,7 @@ export async function transferScore(
       currentState.__pot__.score += amount;
 
       // リーチ棒のカウント（1000点の場合）
-      if (amount === 1000 && currentState.__pot__.riichi !== undefined) {
+      if (amount === 1000) {
         currentState.__pot__.riichi = (currentState.__pot__.riichi || 0) + 1;
       }
     }
@@ -401,7 +432,26 @@ export async function transferScore(
         ((currentState[toId][variable] as number) || 0) + amount;
     }
 
-    // 3. Supabaseに保存
+    // 4. 履歴エントリを作成
+    const displayFromName =
+      fromName || (fromId === "__pot__" ? "供託" : fromId.substring(0, 8));
+    const displayToName =
+      toName || (toId === "__pot__" ? "供託" : toId.substring(0, 8));
+
+    const historyEntry: HistoryEntry = {
+      id: generateUUID(),
+      timestamp: Date.now(),
+      message: `${displayFromName} → ${displayToName}: ${amount}`,
+      snapshot: beforeSnapshot,
+    };
+    console.log("[transferScore] historyEntry created:", JSON.stringify(historyEntry, null, 2));
+
+    // 5. 履歴配列に追加
+    const existingHistory = currentState.__history__ || [];
+    currentState.__history__ = [...existingHistory, historyEntry];
+    console.log("[transferScore] currentState (after modification):", JSON.stringify(currentState, null, 2));
+
+    // 6. Supabaseに保存
     const { error: updateError } = await supabase
       .from("rooms")
       .update({ current_state: currentState })
@@ -411,6 +461,7 @@ export async function transferScore(
       throw updateError;
     }
 
+    console.log("[transferScore] 保存完了");
     return { error: null };
   } catch (error) {
     console.error("Error transferring score:", error);
@@ -419,6 +470,92 @@ export async function transferScore(
         error instanceof Error
           ? error
           : new Error("スコアの移動に失敗しました"),
+    };
+  }
+}
+
+/**
+ * ゲームに参加（リストモード用）
+ * current_stateにプレイヤーを追加
+ * @param roomId - ルームID
+ * @returns 更新されたルーム情報
+ */
+export async function joinGame(
+  roomId: string
+): Promise<{ room: Room | null; error: Error | null }> {
+  try {
+    // 現在のユーザーを取得
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
+
+    if (userError || !user) {
+      throw new Error("ユーザーが認証されていません");
+    }
+
+    // 最新のルーム情報を取得
+    const { data: room, error: fetchError } = await supabase
+      .from("rooms")
+      .select("*")
+      .eq("id", roomId)
+      .single();
+
+    if (fetchError) {
+      throw fetchError;
+    }
+
+    if (!room) {
+      throw new Error("ルームが見つかりません");
+    }
+
+    // ルームが終了していないかチェック
+    if (room.status === "finished") {
+      throw new Error("このルームは既に終了しています");
+    }
+
+    // 既にゲームに参加しているかチェック
+    const currentState = room.current_state || {};
+    if (currentState[user.id]) {
+      throw new Error("既にゲームに参加しています");
+    }
+
+    // テンプレートから初期値を設定してプレイヤーを追加
+    const initialState: Record<string, number> = {};
+    room.template.variables.forEach((variable: any) => {
+      initialState[variable.key] = variable.initial;
+    });
+    currentState[user.id] = initialState;
+
+    // ルームの状態を更新
+    const { data: updateData, error: updateError } = await supabase
+      .from("rooms")
+      .update({ current_state: currentState })
+      .eq("id", roomId)
+      .select()
+      .single();
+
+    if (updateError) {
+      throw updateError;
+    }
+
+    // プロファイルのcurrent_room_idを更新
+    await supabase
+      .from("profiles")
+      .update({ current_room_id: roomId })
+      .eq("id", user.id);
+
+    console.log("User joined game successfully");
+
+    return { room: updateData as Room, error: null };
+  } catch (error) {
+    console.error("Error joining game:", error);
+    return {
+      room: null,
+      error:
+        error instanceof Error
+          ? error
+          : new Error("ゲームへの参加に失敗しました"),
     };
   }
 }
@@ -600,6 +737,164 @@ export async function leaveSeat(
         error instanceof Error
           ? error
           : new Error("座席からの退席に失敗しました"),
+    };
+  }
+}
+
+/**
+ * 指定した履歴IDの時点にロールバック
+ * @param roomId - ルームID
+ * @param historyId - ロールバック先の履歴ID
+ * @returns エラー情報
+ */
+export async function rollbackTo(
+  roomId: string,
+  historyId: string
+): Promise<{ error: Error | null }> {
+  try {
+    // 1. 最新のルーム情報を取得
+    const { data: room, error: fetchError } = await supabase
+      .from("rooms")
+      .select("current_state")
+      .eq("id", roomId)
+      .single();
+
+    if (fetchError) {
+      throw fetchError;
+    }
+
+    if (!room) {
+      throw new Error("ルームが見つかりません");
+    }
+
+    const currentState = room.current_state;
+    const history: HistoryEntry[] = currentState.__history__ || [];
+
+    console.log("[rollbackTo] === ロールバック開始 ===");
+    console.log("[rollbackTo] currentState:", JSON.stringify(currentState, null, 2));
+    console.log("[rollbackTo] history length:", history.length);
+    console.log("[rollbackTo] historyId:", historyId);
+
+    // 2. 指定されたhistoryIdを探す
+    const targetIndex = history.findIndex((entry) => entry.id === historyId);
+    console.log("[rollbackTo] targetIndex:", targetIndex);
+
+    if (targetIndex === -1) {
+      throw new Error("指定された履歴が見つかりません");
+    }
+
+    // 3. 見つかった要素のsnapshotを展開
+    const targetEntry = history[targetIndex];
+    console.log("[rollbackTo] targetEntry:", JSON.stringify(targetEntry, null, 2));
+    console.log("[rollbackTo] targetEntry.snapshot:", JSON.stringify(targetEntry.snapshot, null, 2));
+
+    const restoredState = { ...targetEntry.snapshot };
+    console.log("[rollbackTo] restoredState (shallow copy):", JSON.stringify(restoredState, null, 2));
+
+    // 4. ロールバック地点より「未来」の履歴を削除（targetIndexまで残す）
+    const truncatedHistory = history.slice(0, targetIndex);
+    console.log("[rollbackTo] truncatedHistory length:", truncatedHistory.length);
+
+    // 5. ロールバック操作自体を履歴に追加
+    const rollbackEntry: HistoryEntry = {
+      id: generateUUID(),
+      timestamp: Date.now(),
+      message: `🔄 ロールバック (${new Date(targetEntry.timestamp).toLocaleTimeString("ja-JP")})`,
+      snapshot: createSnapshot(currentState), // ロールバック前の状態を保存
+    };
+
+    // 6. 新しいcurrent_stateを構築
+    const newState = {
+      ...restoredState,
+      __history__: [...truncatedHistory, rollbackEntry],
+    };
+    console.log("[rollbackTo] newState:", JSON.stringify(newState, null, 2));
+    console.log("[rollbackTo] === ロールバック保存前 ===");
+
+    // 7. Supabaseに保存
+    const { error: updateError } = await supabase
+      .from("rooms")
+      .update({ current_state: newState })
+      .eq("id", roomId);
+
+    if (updateError) {
+      throw updateError;
+    }
+
+    return { error: null };
+  } catch (error) {
+    console.error("Error rolling back:", error);
+    return {
+      error:
+        error instanceof Error
+          ? error
+          : new Error("ロールバックに失敗しました"),
+    };
+  }
+}
+
+/**
+ * 直前の操作を取り消す（Undo）
+ * @param roomId - ルームID
+ * @returns エラー情報
+ */
+export async function undoLast(
+  roomId: string
+): Promise<{ error: Error | null }> {
+  try {
+    // 1. 最新のルーム情報を取得
+    const { data: room, error: fetchError } = await supabase
+      .from("rooms")
+      .select("current_state")
+      .eq("id", roomId)
+      .single();
+
+    if (fetchError) {
+      throw fetchError;
+    }
+
+    if (!room) {
+      throw new Error("ルームが見つかりません");
+    }
+
+    const currentState = room.current_state;
+    const history: HistoryEntry[] = currentState.__history__ || [];
+
+    if (history.length === 0) {
+      throw new Error("取り消せる操作がありません");
+    }
+
+    // 2. 最後の履歴エントリを取得
+    const lastEntry = history[history.length - 1];
+
+    // 3. 最後のエントリのsnapshotを復元
+    const restoredState = { ...lastEntry.snapshot };
+
+    // 4. 最後の履歴を削除
+    const truncatedHistory = history.slice(0, -1);
+
+    // 5. 新しいcurrent_stateを構築
+    const newState = {
+      ...restoredState,
+      __history__: truncatedHistory,
+    };
+
+    // 6. Supabaseに保存
+    const { error: updateError } = await supabase
+      .from("rooms")
+      .update({ current_state: newState })
+      .eq("id", roomId);
+
+    if (updateError) {
+      throw updateError;
+    }
+
+    return { error: null };
+  } catch (error) {
+    console.error("Error undoing:", error);
+    return {
+      error:
+        error instanceof Error ? error : new Error("取り消しに失敗しました"),
     };
   }
 }

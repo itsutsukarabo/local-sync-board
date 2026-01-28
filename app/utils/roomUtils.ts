@@ -57,17 +57,7 @@ export const DEFAULT_MAHJONG_TEMPLATE: GameTemplate = {
     { key: "score", label: "点数", initial: 25000 },
     { key: "riichi", label: "リーチ棒", initial: 0 },
   ],
-  actions: [
-    { label: "リーチ", calc: "score - 1000; riichi + 1" },
-    { label: "ロン 1000点", calc: "score + 1000" },
-    { label: "ロン 2000点", calc: "score + 2000" },
-    { label: "ロン 3900点", calc: "score + 3900" },
-    { label: "ロン 5200点", calc: "score + 5200" },
-    { label: "ロン 8000点", calc: "score + 8000" },
-    { label: "ツモ 1000点", calc: "score + 1000" },
-    { label: "ツモ 2000点", calc: "score + 2000" },
-    { label: "ツモ 3900点", calc: "score + 3900" },
-  ],
+  permissions: ["transfer_score", "retrieve_pot", "finalize_game"],
 };
 
 /**
@@ -76,14 +66,7 @@ export const DEFAULT_MAHJONG_TEMPLATE: GameTemplate = {
 export const SIMPLE_SCORE_TEMPLATE: GameTemplate = {
   layoutMode: "list", // リストモード（デフォルト）
   variables: [{ key: "score", label: "スコア", initial: 0 }],
-  actions: [
-    { label: "+1", calc: "score + 1" },
-    { label: "+5", calc: "score + 5" },
-    { label: "+10", calc: "score + 10" },
-    { label: "-1", calc: "score - 1" },
-    { label: "-5", calc: "score - 5" },
-    { label: "-10", calc: "score - 10" },
-  ],
+  permissions: ["transfer_score", "finalize_game"],
 };
 
 /**
@@ -100,4 +83,13 @@ export const TEMPLATE_PRESETS = {
 export const TEMPLATE_LABELS: Record<string, string> = {
   mahjong: "麻雀",
   simple: "シンプルスコア",
+};
+
+/**
+ * 権限キーの表示用ラベル
+ */
+export const PERMISSION_LABELS: Record<string, string> = {
+  transfer_score: "スコア移動",
+  retrieve_pot: "供託金回収",
+  finalize_game: "ゲーム終了",
 };

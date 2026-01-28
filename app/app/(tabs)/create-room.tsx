@@ -11,7 +11,11 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { createRoom } from "../../lib/roomApi";
-import { TEMPLATE_PRESETS, TEMPLATE_LABELS } from "../../utils/roomUtils";
+import {
+  TEMPLATE_PRESETS,
+  TEMPLATE_LABELS,
+  PERMISSION_LABELS,
+} from "../../utils/roomUtils";
 import { GameTemplate } from "../../types";
 
 export default function CreateRoomScreen() {
@@ -108,18 +112,13 @@ export default function CreateRoomScreen() {
                   ))}
 
                   <Text style={[styles.templateDetailLabel, { marginTop: 8 }]}>
-                    アクション:
+                    許可された操作:
                   </Text>
-                  {template.actions.slice(0, 3).map((action, index) => (
+                  {template.permissions.map((permission, index) => (
                     <Text key={index} style={styles.templateDetailText}>
-                      • {action.label}
+                      • {PERMISSION_LABELS[permission] || permission}
                     </Text>
                   ))}
-                  {template.actions.length > 3 && (
-                    <Text style={styles.templateDetailText}>
-                      ...他 {template.actions.length - 3} 個
-                    </Text>
-                  )}
                 </View>
               </TouchableOpacity>
             ))}

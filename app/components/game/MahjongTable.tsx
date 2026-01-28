@@ -53,6 +53,8 @@ export default function MahjongTable({
 }: MahjongTableProps) {
   const containerRef = React.useRef<View>(null);
   const [containerOffset, setContainerOffset] = React.useState({ x: 0, y: 0 });
+  // ドラッグ中に使用する最新のオフセット（非同期更新対応）
+  const currentOffsetRef = React.useRef({ x: 0, y: 0 });
 
   const [paymentModal, setPaymentModal] = useState<{
     visible: boolean;
@@ -116,10 +118,12 @@ export default function MahjongTable({
     const measureContainer = () => {
       if (containerRef.current) {
         containerRef.current.measureInWindow((x, y) => {
-          setContainerOffset({ x, y });
+          const newOffset = { x, y };
+          setContainerOffset(newOffset);
+          currentOffsetRef.current = newOffset;
           console.log(
             "[MahjongTable] Container offset:",
-            { x, y },
+            newOffset,
             "isUserSeated:",
             isUserSeated
           );
@@ -139,28 +143,50 @@ export default function MahjongTable({
   }, [isUserSeated]); // 座席状態が変わったときも再測定
 
   const handleDragStart = (playerId: string, x: number, y: number) => {
-    // コンテナのオフセットを考慮して座標を調整
-    const adjustedX = x - containerOffset.x;
-    const adjustedY = y - containerOffset.y;
-    console.log(`[MahjongTable] Drag start from ${playerId}:`, {
-      original: { x, y },
-      adjusted: { x: adjustedX, y: adjustedY },
-      containerOffset,
-    });
-    setDragState({
-      isDragging: true,
-      fromPlayerId: playerId,
-      startX: adjustedX,
-      startY: adjustedY,
-      currentX: adjustedX,
-      currentY: adjustedY,
-    });
+    // ドラッグ開始時にコンテナ位置を再測定（スクロール対応）
+    if (containerRef.current) {
+      containerRef.current.measureInWindow((containerX, containerY) => {
+        const newOffset = { x: containerX, y: containerY };
+        setContainerOffset(newOffset);
+        currentOffsetRef.current = newOffset; // refも更新
+
+        // 新しいオフセットで座標を調整
+        const adjustedX = x - containerX;
+        const adjustedY = y - containerY;
+        console.log(`[MahjongTable] Drag start from ${playerId}:`, {
+          original: { x, y },
+          adjusted: { x: adjustedX, y: adjustedY },
+          containerOffset: newOffset,
+        });
+        setDragState({
+          isDragging: true,
+          fromPlayerId: playerId,
+          startX: adjustedX,
+          startY: adjustedY,
+          currentX: adjustedX,
+          currentY: adjustedY,
+        });
+      });
+    } else {
+      // フォールバック：既存のオフセットを使用
+      const adjustedX = x - containerOffset.x;
+      const adjustedY = y - containerOffset.y;
+      currentOffsetRef.current = containerOffset;
+      setDragState({
+        isDragging: true,
+        fromPlayerId: playerId,
+        startX: adjustedX,
+        startY: adjustedY,
+        currentX: adjustedX,
+        currentY: adjustedY,
+      });
+    }
   };
 
   const handleDragUpdate = (x: number, y: number) => {
-    // コンテナのオフセットを考慮して座標を調整
-    const adjustedX = x - containerOffset.x;
-    const adjustedY = y - containerOffset.y;
+    // refから最新のオフセットを使用（ドラッグ開始時に測定した値）
+    const adjustedX = x - currentOffsetRef.current.x;
+    const adjustedY = y - currentOffsetRef.current.y;
     setDragState((prev) => ({
       ...prev,
       currentX: adjustedX,
@@ -169,9 +195,9 @@ export default function MahjongTable({
   };
 
   const handleDragEnd = (x: number, y: number) => {
-    // コンテナのオフセットを考慮して座標を調整
-    const adjustedX = x - containerOffset.x;
-    const adjustedY = y - containerOffset.y;
+    // refから最新のオフセットを使用（ドラッグ開始時に測定した値）
+    const adjustedX = x - currentOffsetRef.current.x;
+    const adjustedY = y - currentOffsetRef.current.y;
     if (!dragState.fromPlayerId) {
       setDragState({
         isDragging: false,

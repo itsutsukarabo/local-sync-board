@@ -18,17 +18,20 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useRoomRealtime } from "../../hooks/useRoomRealtime";
 import { useAuth } from "../../hooks/useAuth";
 import PlayerList from "../../components/game/PlayerList";
-import ActionButtons from "../../components/game/ActionButtons";
 import MahjongTable from "../../components/game/MahjongTable";
-import { Action } from "../../types";
+import HistoryLog from "../../components/game/HistoryLog";
 import {
   joinRoom,
+  joinGame,
   leaveRoom,
   updateRoomStatus,
   transferScore,
   joinSeat,
   leaveSeat,
+  rollbackTo,
+  undoLast,
 } from "../../lib/roomApi";
+import { HistoryEntry } from "../../types";
 import { supabase } from "../../lib/supabase";
 
 export default function GameScreen() {
@@ -83,8 +86,9 @@ export default function GameScreen() {
   }
 
   const isHost = user?.id === room.host_user_id;
+  // 予約キー（__pot__, __history__）を除外してプレイヤーリストを取得
   const players = Object.keys(room.current_state || {}).filter(
-    (id) => id !== "__pot__"
+    (id) => !id.startsWith("__")
   );
   const playerCount = players.length;
   const isUserInGame = user?.id ? players.includes(user.id) : false;
@@ -103,25 +107,6 @@ export default function GameScreen() {
   console.log("Game screen - Player count:", playerCount);
   console.log("Game screen - Current user:", user?.id);
   console.log("Game screen - Is user in game:", isUserInGame);
-
-  // アクション実行ハンドラー
-  const handleActionPress = (action: Action) => {
-    // TODO: アクション実行処理を実装
-    Alert.alert(
-      "アクション実行",
-      `${action.label} を実行します\n計算式: ${action.calc}`,
-      [
-        { text: "キャンセル", style: "cancel" },
-        {
-          text: "実行",
-          onPress: () => {
-            console.log("Action executed:", action);
-            // ここで実際のスコア更新処理を実装
-          },
-        },
-      ]
-    );
-  };
 
   // ゲーム開始ハンドラー
   const handleStartGame = () => {
@@ -192,13 +177,13 @@ export default function GameScreen() {
     ]);
   };
 
-  // ゲーム参加ハンドラー
+  // ゲーム参加ハンドラー（リストモード用）
   const handleJoinGame = async () => {
     if (!room || !user) return;
 
     try {
-      // joinRoom関数を使用してゲームに参加
-      const { error } = await joinRoom(room.room_code);
+      // joinGame関数を使用してゲームに参加（current_stateにプレイヤーを追加）
+      const { error } = await joinGame(room.id);
 
       if (error) {
         Alert.alert("エラー", error.message);
@@ -316,9 +301,50 @@ export default function GameScreen() {
     ]);
   };
 
+  // ロールバックハンドラー
+  const handleRollback = async (historyId: string) => {
+    if (!room) return;
+
+    try {
+      const { error } = await rollbackTo(room.id, historyId);
+
+      if (error) {
+        Alert.alert("エラー", error.message);
+        return;
+      }
+
+      console.log("Rollback successful");
+    } catch (error) {
+      console.error("Error rolling back:", error);
+      Alert.alert("エラー", "ロールバックに失敗しました");
+    }
+  };
+
+  // Undoハンドラー
+  const handleUndo = async () => {
+    if (!room) return;
+
+    try {
+      const { error } = await undoLast(room.id);
+
+      if (error) {
+        Alert.alert("エラー", error.message);
+        return;
+      }
+
+      console.log("Undo successful");
+    } catch (error) {
+      console.error("Error undoing:", error);
+      Alert.alert("エラー", "取り消しに失敗しました");
+    }
+  };
+
   // ユーザーが座席に座っているかチェック
   const isUserSeated =
     room?.seats?.some((seat) => seat && seat.userId === user?.id) || false;
+
+  // 履歴を取得
+  const history: HistoryEntry[] = room?.current_state?.__history__ || [];
 
   return (
     <SafeAreaView style={styles.container}>
@@ -360,10 +386,21 @@ export default function GameScreen() {
         </View>
       </View>
 
+      {/* 履歴ログ */}
+      <HistoryLog
+        history={history}
+        onRollback={handleRollback}
+        onUndo={handleUndo}
+        isHost={isHost}
+      />
+
       {/* メインコンテンツ */}
       {layoutMode === "mahjong" ? (
-        // 麻雀モード: 固定レイアウト + 座席選択システム
-        <View style={styles.mahjongContainer}>
+        // 麻雀モード: スクロール可能なレイアウト + 座席選択システム
+        <ScrollView
+          style={styles.mahjongScrollView}
+          contentContainerStyle={styles.mahjongScrollContent}
+        >
           {/* 離席ボタン（座席に座っている場合のみ表示） */}
           {user && isUserSeated && (
             <View style={styles.mahjongParticipationSection}>
@@ -414,7 +451,7 @@ export default function GameScreen() {
               )}
             </View>
           )}
-        </View>
+        </ScrollView>
       ) : (
         // リストモード: スクロール可能なリスト
         <ScrollView style={styles.content}>
@@ -445,14 +482,6 @@ export default function GameScreen() {
             currentUserId={user?.id}
             hostUserId={room.host_user_id}
           />
-
-          {/* アクションボタン（プレイ中のみ、参加者のみ） */}
-          {room.status === "playing" && isUserInGame && (
-            <ActionButtons
-              actions={room.template.actions}
-              onActionPress={handleActionPress}
-            />
-          )}
 
           {/* ホスト専用コントロール */}
           {isHost && (
@@ -567,16 +596,15 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 16,
   },
-  mahjongScrollContainer: {
+  mahjongScrollView: {
     flex: 1,
     backgroundColor: "#f9fafb",
   },
-  mahjongContainer: {
-    flex: 1,
-    backgroundColor: "#f9fafb",
+  mahjongScrollContent: {
+    flexGrow: 1,
+    paddingBottom: 20,
   },
   mahjongTableWrapper: {
-    flex: 1,
     minHeight: 400,
   },
   mahjongParticipationSection: {
