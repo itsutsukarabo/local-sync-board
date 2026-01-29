@@ -2,7 +2,7 @@
  * ルーム関連のユーティリティ関数
  */
 
-import { GameTemplate } from "../types";
+import { GameTemplate, PotAction } from "../types";
 
 /**
  * 4文字のランダムなルームコードを生成（英数字大文字）
@@ -50,23 +50,40 @@ export function validateRoomCode(code: string): {
  * デフォルトのゲームテンプレート（麻雀）
  */
 export const DEFAULT_MAHJONG_TEMPLATE: GameTemplate = {
-  layoutMode: "mahjong", // 麻雀モードを指定
+  layoutMode: "mahjong",
   maxPlayers: 4,
   potEnabled: true,
-  variables: [
-    { key: "score", label: "点数", initial: 25000 },
-    { key: "riichi", label: "リーチ棒", initial: 0 },
+  variables: [{ key: "score", label: "点数", initial: 25000 }],
+  potActions: [
+    { id: "riichi", label: "リーチ", variable: "score", amount: 1000 },
   ],
-  permissions: ["transfer_score", "retrieve_pot", "finalize_game"],
+  hostPermissions: [
+    "transfer_score",
+    "retrieve_pot",
+    "finalize_game",
+    "force_edit",
+    "reset_scores",
+    "edit_template",
+  ],
+  playerPermissions: ["transfer_score", "retrieve_pot"],
 };
 
 /**
  * シンプルなスコアテンプレート
  */
 export const SIMPLE_SCORE_TEMPLATE: GameTemplate = {
-  layoutMode: "list", // リストモード（デフォルト）
+  layoutMode: "list",
   variables: [{ key: "score", label: "スコア", initial: 0 }],
-  permissions: ["transfer_score", "finalize_game"],
+  potEnabled: false,
+  potActions: [],
+  hostPermissions: [
+    "transfer_score",
+    "finalize_game",
+    "force_edit",
+    "reset_scores",
+    "edit_template",
+  ],
+  playerPermissions: ["transfer_score"],
 };
 
 /**
@@ -92,4 +109,36 @@ export const PERMISSION_LABELS: Record<string, string> = {
   transfer_score: "スコア移動",
   retrieve_pot: "供託金回収",
   finalize_game: "ゲーム終了",
+  force_edit: "強制スコア編集",
+  reset_scores: "スコアリセット",
+  edit_template: "テンプレート編集",
 };
+
+/**
+ * 旧形式のテンプレートを新形式に変換するマイグレーション関数
+ */
+export function migrateTemplate(oldTemplate: any): GameTemplate {
+  // 旧形式のpermissionsを新形式に変換
+  if (oldTemplate.permissions && !oldTemplate.hostPermissions) {
+    return {
+      ...oldTemplate,
+      hostPermissions: [
+        ...oldTemplate.permissions,
+        "force_edit",
+        "reset_scores",
+        "edit_template",
+      ],
+      playerPermissions: oldTemplate.permissions.filter(
+        (p: string) => p !== "finalize_game"
+      ),
+      potActions: oldTemplate.potActions || [
+        { id: "default", label: "供託", variable: "score", amount: 1000 },
+      ],
+      // riichi変数を削除
+      variables: oldTemplate.variables.filter(
+        (v: any) => v.key !== "riichi"
+      ),
+    };
+  }
+  return oldTemplate;
+}

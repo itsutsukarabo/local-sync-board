@@ -81,10 +81,9 @@ export default function PotArea({
       <GestureDetector gesture={gesture}>
         <Animated.View style={styles.potCard}>
           <Text style={styles.label}>供託金</Text>
-          <Text style={styles.score}>{pot.score.toLocaleString()}</Text>
-          {pot.riichi !== undefined && pot.riichi > 0 && (
-            <Text style={styles.riichi}>🎴 {pot.riichi}本</Text>
-          )}
+          <Text style={styles.score}>
+            {(pot.score || 0).toLocaleString()}
+          </Text>
         </Animated.View>
       </GestureDetector>
     </View>
@@ -126,10 +125,5 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: "bold",
     color: "#92400e",
-  },
-  riichi: {
-    fontSize: 12,
-    color: "#92400e",
-    marginTop: 4,
   },
 });

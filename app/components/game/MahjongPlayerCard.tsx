@@ -66,20 +66,8 @@ export default function MahjongPlayerCard({
         const centerY = pageY + height / 2;
         cardCenterX.value = centerX;
         cardCenterY.value = centerY;
-        console.log(`[${playerId}] Drag start - Card position:`, {
-          x,
-          y,
-          width,
-          height,
-          pageX,
-          pageY,
-          centerX,
-          centerY,
-        });
         onDragStart(playerId, centerX, centerY);
       });
-    } else {
-      console.warn(`[${playerId}] viewRef.current is null on drag start`);
     }
   }, [playerId, onDragStart, cardCenterX, cardCenterY]);
 

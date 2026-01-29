@@ -1,10 +1,11 @@
 import React, { useState } from "react";
 import { View, StyleSheet, Dimensions } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-import Svg, { Line, Polygon, Circle } from "react-native-svg";
+import Svg, { Line, Polygon } from "react-native-svg";
 import {
   GameState,
   Variable,
+  PotAction,
   PotState,
   SeatInfo,
   SeatPosition,
@@ -17,6 +18,7 @@ import {
 import MahjongPlayerCard from "./MahjongPlayerCard";
 import PotArea from "./PotArea";
 import PaymentModal from "./PaymentModal";
+import PotActionSelectModal from "./PotActionSelectModal";
 import EmptySeat from "./EmptySeat";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
@@ -30,6 +32,7 @@ interface MahjongTableProps {
   onTransfer: (fromId: string, toId: string, amount: number) => Promise<void>;
   onJoinSeat: (seatIndex: number) => Promise<void>; // 座席に着席
   isPotEnabled?: boolean;
+  potActions?: PotAction[];
 }
 
 interface DragState {
@@ -50,6 +53,7 @@ export default function MahjongTable({
   onTransfer,
   onJoinSeat,
   isPotEnabled = true,
+  potActions = [],
 }: MahjongTableProps) {
   const containerRef = React.useRef<View>(null);
   const [containerOffset, setContainerOffset] = React.useState({ x: 0, y: 0 });
@@ -60,6 +64,11 @@ export default function MahjongTable({
     visible: boolean;
     fromId: string;
     toId: string;
+  } | null>(null);
+
+  const [potActionModal, setPotActionModal] = useState<{
+    visible: boolean;
+    fromId: string;
   } | null>(null);
 
   const [dragState, setDragState] = useState<DragState>({
@@ -106,7 +115,7 @@ export default function MahjongTable({
 
   // 座席配列から座席マップを生成（視点回転あり）
   const seatMap = createSeatMapFromSeats(seats, currentUserId);
-  const pot = gameState.__pot__ || { score: 0, riichi: 0 };
+  const pot = gameState.__pot__ || { score: 0 };
 
   // 現在のユーザーが座席に座っているかチェック
   const isUserSeated = seats.some(
@@ -121,12 +130,6 @@ export default function MahjongTable({
           const newOffset = { x, y };
           setContainerOffset(newOffset);
           currentOffsetRef.current = newOffset;
-          console.log(
-            "[MahjongTable] Container offset:",
-            newOffset,
-            "isUserSeated:",
-            isUserSeated
-          );
         });
       }
     };
@@ -153,11 +156,6 @@ export default function MahjongTable({
         // 新しいオフセットで座標を調整
         const adjustedX = x - containerX;
         const adjustedY = y - containerY;
-        console.log(`[MahjongTable] Drag start from ${playerId}:`, {
-          original: { x, y },
-          adjusted: { x: adjustedX, y: adjustedY },
-          containerOffset: newOffset,
-        });
         setDragState({
           isDragging: true,
           fromPlayerId: playerId,
@@ -213,22 +211,12 @@ export default function MahjongTable({
     // ドロップ先を判定（調整済み座標を使用）
     let dropTarget: string | null = null;
 
-    console.log("[MahjongTable] Drop at:", { adjustedX, adjustedY });
-    console.log(
-      "[MahjongTable] Card positions (absolute):",
-      cardPositionsAbsolute
-    );
-    console.log("[MahjongTable] Card positions (relative):", cardPositions);
-    console.log("[MahjongTable] Container offset:", containerOffset);
-    console.log("[MahjongTable] Pot position:", potPosition);
-
     // Potへのドロップ判定
     if (isPotEnabled) {
       const distanceToPot = Math.sqrt(
         Math.pow(adjustedX - potPosition.x, 2) +
           Math.pow(adjustedY - potPosition.y, 2)
       );
-      console.log("[MahjongTable] Distance to Pot:", distanceToPot);
       if (distanceToPot < 80) {
         dropTarget = "__pot__";
       }
@@ -241,7 +229,6 @@ export default function MahjongTable({
         const distance = Math.sqrt(
           Math.pow(adjustedX - pos.x, 2) + Math.pow(adjustedY - pos.y, 2)
         );
-        console.log(`[MahjongTable] Distance to ${playerId}:`, distance, pos);
         if (distance < 80) {
           dropTarget = playerId;
           break;
@@ -251,10 +238,7 @@ export default function MahjongTable({
 
     // ドロップ処理
     if (dropTarget) {
-      console.log("[MahjongTable] Drop target found:", dropTarget);
       handleDrop(dragState.fromPlayerId, dropTarget);
-    } else {
-      console.log("[MahjongTable] No drop target found");
     }
 
     // ドラッグ状態をリセット
@@ -270,11 +254,24 @@ export default function MahjongTable({
 
   const handleDrop = (fromId: string, toId: string) => {
     if (toId === "__pot__") {
-      // 供託（リーチ）: 即座に1000点支払い
-      onTransfer(fromId, "__pot__", 1000);
+      if (potActions.length === 0) {
+        return;
+      } else if (potActions.length === 1) {
+        // potActionsが1つの場合は即座に実行
+        onTransfer(fromId, "__pot__", potActions[0].amount);
+      } else {
+        // potActionsが複数の場合は選択モーダルを表示
+        setPotActionModal({ visible: true, fromId });
+      }
     } else if (fromId === "__pot__") {
       // 供託回収: Pot全額を取得
-      onTransfer("__pot__", toId, pot.score);
+      const totalPot = Object.values(pot).reduce(
+        (sum, val) => sum + (val || 0),
+        0
+      );
+      if (totalPot > 0) {
+        onTransfer("__pot__", toId, totalPot);
+      }
     } else {
       // 対人支払い: モーダルを表示
       setPaymentModal({ visible: true, fromId, toId });
@@ -404,22 +401,6 @@ export default function MahjongTable({
           viewBox={`0 0 ${SCREEN_WIDTH} ${SCREEN_HEIGHT}`}
           pointerEvents="none"
         >
-          {/* デバッグ用: 起点に赤い円を描画 */}
-          <Circle
-            cx={dragState.startX}
-            cy={dragState.startY}
-            r="20"
-            fill="red"
-            opacity="0.5"
-          />
-          {/* デバッグ用: 現在位置に緑の円を描画 */}
-          <Circle
-            cx={dragState.currentX}
-            cy={dragState.currentY}
-            r="15"
-            fill="green"
-            opacity="0.5"
-          />
           <Line
             x1={dragState.startX}
             y1={dragState.startY}
@@ -447,6 +428,19 @@ export default function MahjongTable({
           onClose={() => setPaymentModal(null)}
           onConfirm={handlePaymentConfirm}
           maxAmount={(gameState[paymentModal.fromId]?.score as number) || 0}
+        />
+      )}
+
+      {/* 供託操作選択モーダル */}
+      {potActionModal && (
+        <PotActionSelectModal
+          visible={potActionModal.visible}
+          actions={potActions}
+          onSelect={(action) => {
+            onTransfer(potActionModal.fromId, "__pot__", action.amount);
+            setPotActionModal(null);
+          }}
+          onClose={() => setPotActionModal(null)}
         />
       )}
     </GestureHandlerRootView>

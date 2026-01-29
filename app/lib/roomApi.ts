@@ -204,8 +204,6 @@ export async function joinRoom(
       room.seats = [null, null, null, null];
     }
 
-    console.log("User joined room in spectator mode");
-
     // プロファイルのcurrent_room_idを更新
     await supabase
       .from("profiles")
@@ -375,18 +373,19 @@ export async function transferScore(
 
     // 2. 操作前のスナップショットを作成（履歴用）
     const beforeSnapshot = createSnapshot(room.current_state);
-    console.log("[transferScore] beforeSnapshot:", JSON.stringify(beforeSnapshot, null, 2));
 
     // 3. 最新データを元に計算
     const currentState = { ...room.current_state };
-    console.log("[transferScore] currentState (before modification):", JSON.stringify(currentState, null, 2));
 
     // Potからの移動
     if (fromId === "__pot__") {
-      if (!currentState.__pot__ || currentState.__pot__.score < amount) {
+      if (
+        !currentState.__pot__ ||
+        (currentState.__pot__[variable] || 0) < amount
+      ) {
         throw new Error("供託金が不足しています");
       }
-      currentState.__pot__.score -= amount;
+      currentState.__pot__[variable] -= amount;
 
       if (!currentState[toId]) {
         throw new Error("送信先プレイヤーが見つかりません");
@@ -407,14 +406,10 @@ export async function transferScore(
       currentState[fromId][variable] = fromValue - amount;
 
       if (!currentState.__pot__) {
-        currentState.__pot__ = { score: 0 };
+        currentState.__pot__ = {};
       }
-      currentState.__pot__.score += amount;
-
-      // リーチ棒のカウント（1000点の場合）
-      if (amount === 1000) {
-        currentState.__pot__.riichi = (currentState.__pot__.riichi || 0) + 1;
-      }
+      currentState.__pot__[variable] =
+        (currentState.__pot__[variable] || 0) + amount;
     }
     // プレイヤー間の移動
     else {
@@ -444,12 +439,9 @@ export async function transferScore(
       message: `${displayFromName} → ${displayToName}: ${amount}`,
       snapshot: beforeSnapshot,
     };
-    console.log("[transferScore] historyEntry created:", JSON.stringify(historyEntry, null, 2));
-
     // 5. 履歴配列に追加
     const existingHistory = currentState.__history__ || [];
     currentState.__history__ = [...existingHistory, historyEntry];
-    console.log("[transferScore] currentState (after modification):", JSON.stringify(currentState, null, 2));
 
     // 6. Supabaseに保存
     const { error: updateError } = await supabase
@@ -461,7 +453,6 @@ export async function transferScore(
       throw updateError;
     }
 
-    console.log("[transferScore] 保存完了");
     return { error: null };
   } catch (error) {
     console.error("Error transferring score:", error);
@@ -544,8 +535,6 @@ export async function joinGame(
       .from("profiles")
       .update({ current_room_id: roomId })
       .eq("id", user.id);
-
-    console.log("User joined game successfully");
 
     return { room: updateData as Room, error: null };
   } catch (error) {
@@ -770,14 +759,8 @@ export async function rollbackTo(
     const currentState = room.current_state;
     const history: HistoryEntry[] = currentState.__history__ || [];
 
-    console.log("[rollbackTo] === ロールバック開始 ===");
-    console.log("[rollbackTo] currentState:", JSON.stringify(currentState, null, 2));
-    console.log("[rollbackTo] history length:", history.length);
-    console.log("[rollbackTo] historyId:", historyId);
-
     // 2. 指定されたhistoryIdを探す
     const targetIndex = history.findIndex((entry) => entry.id === historyId);
-    console.log("[rollbackTo] targetIndex:", targetIndex);
 
     if (targetIndex === -1) {
       throw new Error("指定された履歴が見つかりません");
@@ -785,15 +768,11 @@ export async function rollbackTo(
 
     // 3. 見つかった要素のsnapshotを展開
     const targetEntry = history[targetIndex];
-    console.log("[rollbackTo] targetEntry:", JSON.stringify(targetEntry, null, 2));
-    console.log("[rollbackTo] targetEntry.snapshot:", JSON.stringify(targetEntry.snapshot, null, 2));
 
     const restoredState = { ...targetEntry.snapshot };
-    console.log("[rollbackTo] restoredState (shallow copy):", JSON.stringify(restoredState, null, 2));
 
     // 4. ロールバック地点より「未来」の履歴を削除（targetIndexまで残す）
     const truncatedHistory = history.slice(0, targetIndex);
-    console.log("[rollbackTo] truncatedHistory length:", truncatedHistory.length);
 
     // 5. ロールバック操作自体を履歴に追加
     const rollbackEntry: HistoryEntry = {
@@ -808,8 +787,6 @@ export async function rollbackTo(
       ...restoredState,
       __history__: [...truncatedHistory, rollbackEntry],
     };
-    console.log("[rollbackTo] newState:", JSON.stringify(newState, null, 2));
-    console.log("[rollbackTo] === ロールバック保存前 ===");
 
     // 7. Supabaseに保存
     const { error: updateError } = await supabase

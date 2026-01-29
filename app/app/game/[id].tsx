@@ -97,17 +97,6 @@ export default function GameScreen() {
   const layoutMode = room.template.layoutMode || "list";
   const isPotEnabled = room.template.potEnabled || false;
 
-  // デバッグログ
-  console.log("Game screen - Room:", room.id);
-  console.log("Game screen - Template:", room.template);
-  console.log("Game screen - Layout Mode:", layoutMode);
-  console.log("Game screen - Pot Enabled:", isPotEnabled);
-  console.log("Game screen - Current state:", room.current_state);
-  console.log("Game screen - Players:", players);
-  console.log("Game screen - Player count:", playerCount);
-  console.log("Game screen - Current user:", user?.id);
-  console.log("Game screen - Is user in game:", isUserInGame);
-
   // ゲーム開始ハンドラー
   const handleStartGame = () => {
     if (!room) return;
@@ -136,7 +125,6 @@ export default function GameScreen() {
               return;
             }
 
-            console.log("Game started successfully");
             Alert.alert("成功", "ゲームが開始されました！");
           } catch (error) {
             console.error("Error starting game:", error);
@@ -166,7 +154,6 @@ export default function GameScreen() {
               return;
             }
 
-            console.log("Game ended successfully");
             Alert.alert("成功", "ゲームが終了しました");
           } catch (error) {
             console.error("Error ending game:", error);
@@ -190,7 +177,6 @@ export default function GameScreen() {
         return;
       }
 
-      console.log("User joined game successfully");
     } catch (error) {
       console.error("Error joining game:", error);
       Alert.alert("エラー", "ゲームへの参加に失敗しました");
@@ -221,7 +207,6 @@ export default function GameScreen() {
               throw error;
             }
 
-            console.log("User left game successfully");
           } catch (error) {
             console.error("Error leaving game:", error);
             Alert.alert("エラー", "ゲームからの退出に失敗しました");
@@ -247,7 +232,6 @@ export default function GameScreen() {
         return;
       }
 
-      console.log("Score transferred successfully");
     } catch (error) {
       console.error("Error transferring score:", error);
       Alert.alert("エラー", "スコアの移動に失敗しました");
@@ -266,7 +250,6 @@ export default function GameScreen() {
         return;
       }
 
-      console.log("User joined seat successfully");
     } catch (error) {
       console.error("Error joining seat:", error);
       Alert.alert("エラー", "座席への着席に失敗しました");
@@ -291,7 +274,6 @@ export default function GameScreen() {
               return;
             }
 
-            console.log("User left seat successfully");
           } catch (error) {
             console.error("Error leaving seat:", error);
             Alert.alert("エラー", "座席からの離席に失敗しました");
@@ -313,7 +295,6 @@ export default function GameScreen() {
         return;
       }
 
-      console.log("Rollback successful");
     } catch (error) {
       console.error("Error rolling back:", error);
       Alert.alert("エラー", "ロールバックに失敗しました");
@@ -332,7 +313,6 @@ export default function GameScreen() {
         return;
       }
 
-      console.log("Undo successful");
     } catch (error) {
       console.error("Error undoing:", error);
       Alert.alert("エラー", "取り消しに失敗しました");
@@ -426,6 +406,7 @@ export default function GameScreen() {
               onTransfer={handleTransfer}
               onJoinSeat={handleJoinSeat}
               isPotEnabled={isPotEnabled}
+              potActions={room.template.potActions || []}
             />
           </View>
 

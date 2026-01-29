@@ -6,6 +6,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { Room } from "../types";
+import { migrateTemplate } from "../utils/roomUtils";
 
 interface UseRoomRealtimeResult {
   room: Room | null;
@@ -52,9 +53,9 @@ export function useRoomRealtime(roomId: string | null): UseRoomRealtimeResult {
           throw new Error("ルームが見つかりません");
         }
 
-        console.log("Initial room data:", data);
-        console.log("Current state:", data.current_state);
-        setRoom(data as Room);
+        const roomData = data as Room;
+        roomData.template = migrateTemplate(roomData.template);
+        setRoom(roomData);
       } catch (err) {
         console.error("Error fetching room:", err);
         setError(
@@ -78,8 +79,9 @@ export function useRoomRealtime(roomId: string | null): UseRoomRealtimeResult {
             filter: `id=eq.${roomId}`,
           },
           (payload) => {
-            console.log("Room updated:", payload);
-            setRoom(payload.new as Room);
+            const updatedRoom = payload.new as Room;
+            updatedRoom.template = migrateTemplate(updatedRoom.template);
+            setRoom(updatedRoom);
           }
         )
         .on(
@@ -91,14 +93,11 @@ export function useRoomRealtime(roomId: string | null): UseRoomRealtimeResult {
             filter: `id=eq.${roomId}`,
           },
           (payload) => {
-            console.log("Room deleted:", payload);
             setRoom(null);
             setError(new Error("ルームが削除されました"));
           }
         )
-        .subscribe((status) => {
-          console.log("Subscription status:", status);
-        });
+        .subscribe();
     };
 
     // 初期化

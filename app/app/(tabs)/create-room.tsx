@@ -112,9 +112,9 @@ export default function CreateRoomScreen() {
                   ))}
 
                   <Text style={[styles.templateDetailLabel, { marginTop: 8 }]}>
-                    許可された操作:
+                    ホスト権限:
                   </Text>
-                  {template.permissions.map((permission, index) => (
+                  {template.hostPermissions.map((permission, index) => (
                     <Text key={index} style={styles.templateDetailText}>
                       • {PERMISSION_LABELS[permission] || permission}
                     </Text>

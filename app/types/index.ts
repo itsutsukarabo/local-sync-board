@@ -83,9 +83,28 @@ export type LayoutMode = "list" | "mahjong";
  * 権限キー定義
  * - transfer_score: プレイヤー間でのスコア移動
  * - retrieve_pot: 供託金（Pot）からの回収
- * - finalize_game: ゲーム終了・精算操作（ホスト専用）
+ * - finalize_game: ゲーム終了・精算操作
+ * - force_edit: 強制編集（他プレイヤーのスコア操作）
+ * - reset_scores: スコアリセット
+ * - edit_template: テンプレート編集（変数追加、初期値変更等）
  */
-export type PermissionKey = "transfer_score" | "retrieve_pot" | "finalize_game";
+export type PermissionKey =
+  | "transfer_score"
+  | "retrieve_pot"
+  | "finalize_game"
+  | "force_edit"
+  | "reset_scores"
+  | "edit_template";
+
+/**
+ * Pot操作定義
+ */
+export interface PotAction {
+  id: string; // 一意のID
+  label: string; // 表示名（例: "リーチ"）
+  variable: string; // 対象の変数キー（例: "score"）
+  amount: number; // 移動量（例: 1000）
+}
 
 /**
  * ゲームテンプレート定義（拡張版）
@@ -93,10 +112,12 @@ export type PermissionKey = "transfer_score" | "retrieve_pot" | "finalize_game";
  */
 export interface GameTemplate {
   variables: Variable[];
-  permissions: PermissionKey[]; // 許可された操作権限のリスト
+  hostPermissions: PermissionKey[]; // ホストの権限
+  playerPermissions: PermissionKey[]; // プレイヤーの権限
   layoutMode?: LayoutMode; // デフォルトは "list"
   maxPlayers?: number; // 最大プレイヤー数（麻雀モードでは4）
   potEnabled?: boolean; // 供託金機能の有効化
+  potActions?: PotAction[]; // Pot操作の定義リスト
 }
 
 /**
@@ -120,10 +141,10 @@ export interface Action {
 
 /**
  * 供託金状態
+ * 各変数ごとの供託金を保持
  */
 export interface PotState {
-  score: number; // 供託金の合計
-  riichi?: number; // リーチ棒の本数
+  [variableKey: string]: number;
 }
 
 /**
