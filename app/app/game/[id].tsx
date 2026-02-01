@@ -3,7 +3,7 @@
  * ルームのリアルタイム同期とプレイヤー一覧表示
  */
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect } from "react";
 import {
   View,
   Text,
@@ -39,15 +39,6 @@ export default function GameScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { user } = useAuth();
   const { room, loading, error } = useRoomRealtime(id);
-  const [showSettings, setShowSettings] = useState(false);
-
-  // ホストの場合、初回のみ設定モーダルを表示
-  useEffect(() => {
-    if (room && user && room.host_user_id === user.id) {
-      // TODO: 初回のみ表示するロジック（localStorage等で管理）
-      // setShowSettings(true);
-    }
-  }, [room, user]);
 
   // エラーハンドリング
   useEffect(() => {
@@ -341,7 +332,9 @@ export default function GameScreen() {
         </View>
         <View style={styles.headerRight}>
           {isHost && (
-            <TouchableOpacity onPress={() => setShowSettings(!showSettings)}>
+            <TouchableOpacity
+              onPress={() => router.push(`/game/settings/${room.id}`)}
+            >
               <Text style={styles.settingsButton}>⚙️</Text>
             </TouchableOpacity>
           )}
