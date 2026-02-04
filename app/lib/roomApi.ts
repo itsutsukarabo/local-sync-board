@@ -399,9 +399,6 @@ export async function transferScore(
         throw new Error("送信元プレイヤーが見つかりません");
       }
       const fromValue = (currentState[fromId][variable] as number) || 0;
-      if (fromValue < amount) {
-        throw new Error("点数が不足しています");
-      }
 
       currentState[fromId][variable] = fromValue - amount;
 
@@ -418,9 +415,6 @@ export async function transferScore(
       }
 
       const fromValue = (currentState[fromId][variable] as number) || 0;
-      if (fromValue < amount) {
-        throw new Error("点数が不足しています");
-      }
 
       currentState[fromId][variable] = fromValue - amount;
       currentState[toId][variable] =

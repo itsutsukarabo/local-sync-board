@@ -427,7 +427,6 @@ export default function MahjongTable({
           visible={paymentModal.visible}
           onClose={() => setPaymentModal(null)}
           onConfirm={handlePaymentConfirm}
-          maxAmount={(gameState[paymentModal.fromId]?.score as number) || 0}
         />
       )}
 

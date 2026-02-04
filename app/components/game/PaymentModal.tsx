@@ -12,23 +12,18 @@ interface PaymentModalProps {
   visible: boolean;
   onClose: () => void;
   onConfirm: (amount: number) => void;
-  maxAmount: number;
 }
 
 export default function PaymentModal({
   visible,
   onClose,
   onConfirm,
-  maxAmount,
 }: PaymentModalProps) {
   const [amount, setAmount] = useState("");
 
   const handleConfirm = () => {
     const numAmount = parseInt(amount, 10);
     if (isNaN(numAmount) || numAmount <= 0) {
-      return;
-    }
-    if (numAmount > maxAmount) {
       return;
     }
     onConfirm(numAmount);
@@ -56,10 +51,6 @@ export default function PaymentModal({
             placeholder="金額を入力"
             placeholderTextColor="#9ca3af"
           />
-
-          <Text style={styles.maxLabel}>
-            最大: {maxAmount.toLocaleString()}点
-          </Text>
 
           {/* クイック選択ボタン */}
           <View style={styles.quickButtons}>
@@ -126,12 +117,6 @@ const styles = StyleSheet.create({
     fontSize: 18,
     textAlign: "center",
     marginBottom: 8,
-  },
-  maxLabel: {
-    fontSize: 12,
-    color: "#6b7280",
-    textAlign: "center",
-    marginBottom: 16,
   },
   quickButtons: {
     flexDirection: "row",
