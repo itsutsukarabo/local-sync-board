@@ -811,6 +811,75 @@ export async function rollbackTo(
 }
 
 /**
+ * テンプレートを更新（変数追加、初期値変更、Pot操作編集）
+ * 新しい変数が追加された場合、既存プレイヤーにもその変数を初期値で追加する
+ * @param roomId - ルームID
+ * @param templateUpdate - 更新するテンプレートの部分データ
+ */
+export async function updateTemplate(
+  roomId: string,
+  templateUpdate: Partial<GameTemplate>
+): Promise<{ error: Error | null }> {
+  try {
+    // 1. 最新のルーム情報を取得
+    const { data: room, error: fetchError } = await supabase
+      .from("rooms")
+      .select("*")
+      .eq("id", roomId)
+      .single();
+
+    if (fetchError) {
+      throw fetchError;
+    }
+
+    if (!room) {
+      throw new Error("ルームが見つかりません");
+    }
+
+    // 2. テンプレートをマージ
+    const newTemplate = { ...room.template, ...templateUpdate };
+
+    // 3. 新しい変数が追加された場合、既存プレイヤーにその変数を初期値で追加
+    const currentState = { ...room.current_state };
+    if (templateUpdate.variables) {
+      const playerIds = Object.keys(currentState).filter(
+        (key) => !key.startsWith("__")
+      );
+      for (const playerId of playerIds) {
+        for (const variable of templateUpdate.variables) {
+          if (currentState[playerId][variable.key] === undefined) {
+            currentState[playerId][variable.key] = variable.initial;
+          }
+        }
+      }
+    }
+
+    // 4. Supabaseに保存
+    const { error: updateError } = await supabase
+      .from("rooms")
+      .update({
+        template: newTemplate,
+        current_state: currentState,
+      })
+      .eq("id", roomId);
+
+    if (updateError) {
+      throw updateError;
+    }
+
+    return { error: null };
+  } catch (error) {
+    console.error("Error updating template:", error);
+    return {
+      error:
+        error instanceof Error
+          ? error
+          : new Error("テンプレートの更新に失敗しました"),
+    };
+  }
+}
+
+/**
  * 直前の操作を取り消す（Undo）
  * @param roomId - ルームID
  * @returns エラー情報

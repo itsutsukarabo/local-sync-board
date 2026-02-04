@@ -3,7 +3,7 @@
  * テンプレートのカスタマイズ、プレイヤー管理、リセット機能
  */
 
-import React from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -11,11 +11,16 @@ import {
   ScrollView,
   TouchableOpacity,
   ActivityIndicator,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useRoomRealtime } from "../../../hooks/useRoomRealtime";
 import { useAuth } from "../../../hooks/useAuth";
+import { updateTemplate } from "../../../lib/roomApi";
+import { Variable, PotAction } from "../../../types";
+import VariableEditor from "../../../components/settings/VariableEditor";
+import PotActionEditor from "../../../components/settings/PotActionEditor";
 
 export default function RoomSettingsScreen() {
   const router = useRouter();
@@ -65,6 +70,67 @@ export default function RoomSettingsScreen() {
     );
   }
 
+  return (
+    <SettingsContent room={room} user={user} router={router} />
+  );
+}
+
+/**
+ * 設定画面の本体（state管理をルーム取得後に行うため分離）
+ */
+function SettingsContent({
+  room,
+  user,
+  router,
+}: {
+  room: any;
+  user: any;
+  router: any;
+}) {
+  const [editVariables, setEditVariables] = useState<Variable[]>(
+    room.template.variables
+  );
+  const [editPotActions, setEditPotActions] = useState<PotAction[]>(
+    room.template.potActions || []
+  );
+  const [saving, setSaving] = useState(false);
+  const [hasChanges, setHasChanges] = useState(false);
+
+  // ルームデータが更新されたらローカルstateを同期
+  useEffect(() => {
+    setEditVariables(room.template.variables);
+    setEditPotActions(room.template.potActions || []);
+    setHasChanges(false);
+  }, [room.template]);
+
+  const handleVariablesUpdate = useCallback((variables: Variable[]) => {
+    setEditVariables(variables);
+    setHasChanges(true);
+  }, []);
+
+  const handlePotActionsUpdate = useCallback((potActions: PotAction[]) => {
+    setEditPotActions(potActions);
+    setHasChanges(true);
+  }, []);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const { error } = await updateTemplate(room.id, {
+        variables: editVariables,
+        potActions: editPotActions,
+      });
+      if (error) {
+        Alert.alert("エラー", error.message);
+      } else {
+        setHasChanges(false);
+        Alert.alert("保存完了", "テンプレートを更新しました。");
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
   // プレイヤー一覧を取得
   const players = Object.keys(room.current_state || {}).filter(
     (key) => !key.startsWith("__")
@@ -78,7 +144,19 @@ export default function RoomSettingsScreen() {
           <Text style={styles.headerBack}>← 戻る</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>ルーム設定</Text>
-        <View style={styles.headerSpacer} />
+        {hasChanges ? (
+          <TouchableOpacity
+            style={[styles.saveBtn, saving && styles.saveBtnDisabled]}
+            onPress={handleSave}
+            disabled={saving}
+          >
+            <Text style={styles.saveBtnText}>
+              {saving ? "保存中..." : "保存"}
+            </Text>
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.headerSpacer} />
+        )}
       </View>
 
       <ScrollView
@@ -91,17 +169,11 @@ export default function RoomSettingsScreen() {
           <Text style={styles.sectionDescription}>
             ゲームで使用する変数の追加・編集ができます
           </Text>
-          {room.template.variables.map((variable) => (
-            <View key={variable.key} style={styles.listItem}>
-              <Text style={styles.listItemLabel}>{variable.label}</Text>
-              <Text style={styles.listItemValue}>
-                初期値: {variable.initial.toLocaleString()}
-              </Text>
-            </View>
-          ))}
-          <Text style={styles.placeholder}>
-            (Task 3.5-4で編集UI実装予定)
-          </Text>
+          <VariableEditor
+            variables={editVariables}
+            potActions={editPotActions}
+            onUpdate={handleVariablesUpdate}
+          />
         </View>
 
         {/* 供託操作セクション */}
@@ -111,17 +183,11 @@ export default function RoomSettingsScreen() {
             <Text style={styles.sectionDescription}>
               供託に入れる操作の定義を管理します
             </Text>
-            {(room.template.potActions || []).map((action) => (
-              <View key={action.id} style={styles.listItem}>
-                <Text style={styles.listItemLabel}>{action.label}</Text>
-                <Text style={styles.listItemValue}>
-                  -{action.amount.toLocaleString()} ({action.variable})
-                </Text>
-              </View>
-            ))}
-            <Text style={styles.placeholder}>
-              (Task 3.5-4で編集UI実装予定)
-            </Text>
+            <PotActionEditor
+              potActions={editPotActions}
+              variables={editVariables}
+              onUpdate={handlePotActionsUpdate}
+            />
           </View>
         )}
 
@@ -146,7 +212,7 @@ export default function RoomSettingsScreen() {
                   <Text style={styles.listItemValue}>
                     {room.template.variables
                       .map(
-                        (v) =>
+                        (v: Variable) =>
                           `${v.label}: ${((playerState?.[v.key] as number) || 0).toLocaleString()}`
                       )
                       .join(" / ")}
@@ -228,6 +294,20 @@ const styles = StyleSheet.create({
   },
   headerSpacer: {
     width: 60,
+  },
+  saveBtn: {
+    backgroundColor: "#3b82f6",
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 6,
+  },
+  saveBtnDisabled: {
+    opacity: 0.5,
+  },
+  saveBtnText: {
+    color: "#ffffff",
+    fontSize: 14,
+    fontWeight: "600",
   },
   scrollView: {
     flex: 1,
