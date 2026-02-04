@@ -97,13 +97,20 @@ export type PermissionKey =
   | "edit_template";
 
 /**
+ * Pot操作の個別転送定義
+ */
+export interface PotTransfer {
+  variable: string; // 対象の変数キー（例: "score"）
+  amount: number; // 移動量（例: 1000）
+}
+
+/**
  * Pot操作定義
  */
 export interface PotAction {
   id: string; // 一意のID
   label: string; // 表示名（例: "リーチ"）
-  variable: string; // 対象の変数キー（例: "score"）
-  amount: number; // 移動量（例: 1000）
+  transfers: PotTransfer[]; // 転送リスト（複数変数対応）
 }
 
 /**

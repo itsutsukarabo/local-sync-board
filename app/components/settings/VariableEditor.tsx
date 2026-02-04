@@ -49,7 +49,7 @@ export default function VariableEditor({
 
     // potActionsで使用中かチェック
     const usedByActions = potActions.filter(
-      (a) => a.variable === variable.key
+      (a) => a.transfers.some((t) => t.variable === variable.key)
     );
     if (usedByActions.length > 0) {
       const actionNames = usedByActions.map((a) => a.label).join(", ");

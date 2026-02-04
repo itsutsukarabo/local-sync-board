@@ -7,26 +7,32 @@ import {
   TouchableOpacity,
   StyleSheet,
 } from "react-native";
+import { Variable } from "../../types";
 
 interface PaymentModalProps {
   visible: boolean;
   onClose: () => void;
-  onConfirm: (amount: number) => void;
+  onConfirm: (transfers: { variable: string; amount: number }[]) => void;
+  variables: Variable[];
 }
 
 export default function PaymentModal({
   visible,
   onClose,
   onConfirm,
+  variables,
 }: PaymentModalProps) {
   const [amount, setAmount] = useState("");
+  const [selectedVariable, setSelectedVariable] = useState(
+    variables[0]?.key || "score"
+  );
 
   const handleConfirm = () => {
     const numAmount = parseInt(amount, 10);
     if (isNaN(numAmount) || numAmount <= 0) {
       return;
     }
-    onConfirm(numAmount);
+    onConfirm([{ variable: selectedVariable, amount: numAmount }]);
     setAmount("");
   };
 
@@ -42,6 +48,32 @@ export default function PaymentModal({
       <View style={styles.overlay}>
         <View style={styles.modal}>
           <Text style={styles.title}>支払い金額を入力</Text>
+
+          {/* 変数選択（複数ある場合のみ表示） */}
+          {variables.length > 1 && (
+            <View style={styles.variableSelector}>
+              {variables.map((v) => (
+                <TouchableOpacity
+                  key={v.key}
+                  style={[
+                    styles.variableButton,
+                    selectedVariable === v.key && styles.variableButtonActive,
+                  ]}
+                  onPress={() => setSelectedVariable(v.key)}
+                >
+                  <Text
+                    style={[
+                      styles.variableButtonText,
+                      selectedVariable === v.key &&
+                        styles.variableButtonTextActive,
+                    ]}
+                  >
+                    {v.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
 
           <TextInput
             style={styles.input}
@@ -108,6 +140,32 @@ const styles = StyleSheet.create({
     color: "#1f2937",
     marginBottom: 16,
     textAlign: "center",
+  },
+  variableSelector: {
+    flexDirection: "row",
+    justifyContent: "center",
+    marginBottom: 12,
+    gap: 8,
+  },
+  variableButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: "#f3f4f6",
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+  },
+  variableButtonActive: {
+    backgroundColor: "#3b82f6",
+    borderColor: "#3b82f6",
+  },
+  variableButtonText: {
+    fontSize: 14,
+    color: "#6b7280",
+    fontWeight: "500",
+  },
+  variableButtonTextActive: {
+    color: "#ffffff",
   },
   input: {
     borderWidth: 2,

@@ -55,7 +55,7 @@ export const DEFAULT_MAHJONG_TEMPLATE: GameTemplate = {
   potEnabled: true,
   variables: [{ key: "score", label: "点数", initial: 25000 }],
   potActions: [
-    { id: "riichi", label: "リーチ", variable: "score", amount: 1000 },
+    { id: "riichi", label: "リーチ", transfers: [{ variable: "score", amount: 1000 }] },
   ],
   hostPermissions: [
     "transfer_score",
@@ -115,30 +115,59 @@ export const PERMISSION_LABELS: Record<string, string> = {
 };
 
 /**
+ * 旧形式のPotAction（variable/amount）を新形式（transfers）に変換
+ */
+function migratePotActions(potActions: any[]): PotAction[] {
+  return potActions.map((action: any) => {
+    // 既に新形式（transfers配列あり）の場合はそのまま返す
+    if (Array.isArray(action.transfers)) {
+      return action;
+    }
+    // 旧形式（variable/amount）を新形式に変換
+    return {
+      id: action.id,
+      label: action.label,
+      transfers: [{ variable: action.variable, amount: action.amount }],
+    };
+  });
+}
+
+/**
  * 旧形式のテンプレートを新形式に変換するマイグレーション関数
  */
 export function migrateTemplate(oldTemplate: any): GameTemplate {
+  let template = oldTemplate;
+
   // 旧形式のpermissionsを新形式に変換
-  if (oldTemplate.permissions && !oldTemplate.hostPermissions) {
-    return {
-      ...oldTemplate,
+  if (template.permissions && !template.hostPermissions) {
+    template = {
+      ...template,
       hostPermissions: [
-        ...oldTemplate.permissions,
+        ...template.permissions,
         "force_edit",
         "reset_scores",
         "edit_template",
       ],
-      playerPermissions: oldTemplate.permissions.filter(
+      playerPermissions: template.permissions.filter(
         (p: string) => p !== "finalize_game"
       ),
-      potActions: oldTemplate.potActions || [
-        { id: "default", label: "供託", variable: "score", amount: 1000 },
+      potActions: template.potActions || [
+        { id: "default", label: "供託", transfers: [{ variable: "score", amount: 1000 }] },
       ],
       // riichi変数を削除
-      variables: oldTemplate.variables.filter(
+      variables: template.variables.filter(
         (v: any) => v.key !== "riichi"
       ),
     };
   }
-  return oldTemplate;
+
+  // potActionsの旧形式（variable/amount）を新形式（transfers）に変換
+  if (template.potActions) {
+    template = {
+      ...template,
+      potActions: migratePotActions(template.potActions),
+    };
+  }
+
+  return template;
 }

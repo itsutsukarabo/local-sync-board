@@ -3,7 +3,7 @@
  * Supabase Realtimeを使用してルームの変更を監視
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { supabase } from "../lib/supabase";
 import { Room } from "../types";
 import { migrateTemplate } from "../utils/roomUtils";
@@ -12,6 +12,7 @@ interface UseRoomRealtimeResult {
   room: Room | null;
   loading: boolean;
   error: Error | null;
+  refetch: () => Promise<void>;
 }
 
 /**
@@ -23,6 +24,30 @@ export function useRoomRealtime(roomId: string | null): UseRoomRealtimeResult {
   const [room, setRoom] = useState<Room | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+
+  // 手動でデータを再取得する関数
+  const refetch = useCallback(async () => {
+    if (!roomId) return;
+    try {
+      const { data, error: fetchError } = await supabase
+        .from("rooms")
+        .select("*")
+        .eq("id", roomId)
+        .single();
+
+      if (fetchError) {
+        throw fetchError;
+      }
+
+      if (data) {
+        const roomData = data as Room;
+        roomData.template = migrateTemplate(roomData.template);
+        setRoom(roomData);
+      }
+    } catch (err) {
+      console.error("Error refetching room:", err);
+    }
+  }, [roomId]);
 
   useEffect(() => {
     if (!roomId) {
@@ -112,5 +137,5 @@ export function useRoomRealtime(roomId: string | null): UseRoomRealtimeResult {
     };
   }, [roomId]);
 
-  return { room, loading, error };
+  return { room, loading, error, refetch };
 }

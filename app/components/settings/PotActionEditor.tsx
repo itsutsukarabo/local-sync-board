@@ -1,6 +1,6 @@
 /**
  * 供託操作エディタ
- * Pot操作の追加・編集・削除を行う
+ * Pot操作の追加・編集・削除を行う（複数変数対応）
  */
 
 import React, { useState } from "react";
@@ -12,7 +12,7 @@ import {
   StyleSheet,
   Alert,
 } from "react-native";
-import { PotAction, Variable } from "../../types";
+import { PotAction, PotTransfer, Variable } from "../../types";
 
 interface PotActionEditorProps {
   potActions: PotAction[];
@@ -34,10 +34,9 @@ export default function PotActionEditor({
 }: PotActionEditorProps) {
   const [showAddForm, setShowAddForm] = useState(false);
   const [newLabel, setNewLabel] = useState("");
-  const [newVariable, setNewVariable] = useState(
-    variables[0]?.key || "score"
-  );
-  const [newAmount, setNewAmount] = useState("");
+  const [newTransfers, setNewTransfers] = useState<PotTransfer[]>([
+    { variable: variables[0]?.key || "score", amount: 0 },
+  ]);
 
   const handleLabelChange = (index: number, label: string) => {
     const updated = [...potActions];
@@ -45,17 +44,52 @@ export default function PotActionEditor({
     onUpdate(updated);
   };
 
-  const handleVariableChange = (index: number, variable: string) => {
+  const handleTransferVariableChange = (
+    actionIndex: number,
+    transferIndex: number,
+    variable: string
+  ) => {
     const updated = [...potActions];
-    updated[index] = { ...updated[index], variable };
+    const transfers = [...updated[actionIndex].transfers];
+    transfers[transferIndex] = { ...transfers[transferIndex], variable };
+    updated[actionIndex] = { ...updated[actionIndex], transfers };
     onUpdate(updated);
   };
 
-  const handleAmountChange = (index: number, text: string) => {
+  const handleTransferAmountChange = (
+    actionIndex: number,
+    transferIndex: number,
+    text: string
+  ) => {
     const num = Number(text);
     if (text === "" || isNaN(num) || num <= 0) return;
     const updated = [...potActions];
-    updated[index] = { ...updated[index], amount: num };
+    const transfers = [...updated[actionIndex].transfers];
+    transfers[transferIndex] = { ...transfers[transferIndex], amount: num };
+    updated[actionIndex] = { ...updated[actionIndex], transfers };
+    onUpdate(updated);
+  };
+
+  const handleAddTransfer = (actionIndex: number) => {
+    const updated = [...potActions];
+    const transfers = [
+      ...updated[actionIndex].transfers,
+      { variable: variables[0]?.key || "score", amount: 0 },
+    ];
+    updated[actionIndex] = { ...updated[actionIndex], transfers };
+    onUpdate(updated);
+  };
+
+  const handleDeleteTransfer = (actionIndex: number, transferIndex: number) => {
+    const updated = [...potActions];
+    if (updated[actionIndex].transfers.length <= 1) {
+      Alert.alert("エラー", "最低1つの変数が必要です。");
+      return;
+    }
+    const transfers = updated[actionIndex].transfers.filter(
+      (_, i) => i !== transferIndex
+    );
+    updated[actionIndex] = { ...updated[actionIndex], transfers };
     onUpdate(updated);
   };
 
@@ -76,37 +110,111 @@ export default function PotActionEditor({
 
   const handleAdd = () => {
     const label = newLabel.trim();
-    const amount = Number(newAmount) || 0;
 
     if (!label) {
       Alert.alert("エラー", "表示名を入力してください。");
       return;
     }
 
-    if (amount <= 0) {
+    const validTransfers = newTransfers.filter((t) => t.amount > 0);
+    if (validTransfers.length === 0) {
       Alert.alert("エラー", "量は1以上を入力してください。");
       return;
     }
 
-    if (!variables.some((v) => v.key === newVariable)) {
-      Alert.alert("エラー", "無効な変数が選択されています。");
-      return;
+    for (const t of validTransfers) {
+      if (!variables.some((v) => v.key === t.variable)) {
+        Alert.alert("エラー", "無効な変数が選択されています。");
+        return;
+      }
     }
 
     onUpdate([
       ...potActions,
-      { id: generateId(), label, variable: newVariable, amount },
+      { id: generateId(), label, transfers: validTransfers },
     ]);
     setNewLabel("");
-    setNewAmount("");
-    setNewVariable(variables[0]?.key || "score");
+    setNewTransfers([{ variable: variables[0]?.key || "score", amount: 0 }]);
     setShowAddForm(false);
   };
 
-  const getVariableLabel = (key: string): string => {
-    const v = variables.find((v) => v.key === key);
-    return v ? v.label : key;
+  const handleNewTransferVariableChange = (index: number, variable: string) => {
+    const updated = [...newTransfers];
+    updated[index] = { ...updated[index], variable };
+    setNewTransfers(updated);
   };
+
+  const handleNewTransferAmountChange = (index: number, text: string) => {
+    const num = Number(text);
+    if (text !== "" && (isNaN(num) || num < 0)) return;
+    const updated = [...newTransfers];
+    updated[index] = { ...updated[index], amount: num || 0 };
+    setNewTransfers(updated);
+  };
+
+  const handleAddNewTransfer = () => {
+    setNewTransfers([
+      ...newTransfers,
+      { variable: variables[0]?.key || "score", amount: 0 },
+    ]);
+  };
+
+  const handleDeleteNewTransfer = (index: number) => {
+    if (newTransfers.length <= 1) return;
+    setNewTransfers(newTransfers.filter((_, i) => i !== index));
+  };
+
+  const renderTransferRow = (
+    transfer: PotTransfer,
+    transferIndex: number,
+    onVariableChange: (index: number, variable: string) => void,
+    onAmountChange: (index: number, text: string) => void,
+    onDeleteTransfer?: (index: number) => void,
+    canDelete?: boolean
+  ) => (
+    <View key={transferIndex} style={styles.transferRow}>
+      <View style={styles.transferContent}>
+        <View style={styles.variableSelector}>
+          {variables.map((v) => (
+            <TouchableOpacity
+              key={v.key}
+              style={[
+                styles.variableChip,
+                transfer.variable === v.key && styles.variableChipActive,
+              ]}
+              onPress={() => onVariableChange(transferIndex, v.key)}
+            >
+              <Text
+                style={[
+                  styles.variableChipText,
+                  transfer.variable === v.key && styles.variableChipTextActive,
+                ]}
+              >
+                {v.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+        <View style={styles.amountRow}>
+          <TextInput
+            style={styles.amountInput}
+            value={transfer.amount > 0 ? String(transfer.amount) : ""}
+            onChangeText={(text) => onAmountChange(transferIndex, text)}
+            keyboardType="numeric"
+            placeholder="1000"
+          />
+          {onDeleteTransfer && canDelete && (
+            <TouchableOpacity
+              onPress={() => onDeleteTransfer(transferIndex)}
+              style={styles.transferDeleteBtn}
+            >
+              <Text style={styles.transferDeleteBtnText}>x</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+    </View>
+  );
 
   return (
     <View>
@@ -131,41 +239,25 @@ export default function PotActionEditor({
                 placeholder="表示名"
               />
             </View>
-            <View style={styles.inputGroupNarrow}>
-              <Text style={styles.inputLabel}>量</Text>
-              <TextInput
-                style={styles.textInput}
-                value={String(action.amount)}
-                onChangeText={(text) => handleAmountChange(index, text)}
-                keyboardType="numeric"
-                placeholder="1000"
-              />
-            </View>
           </View>
-          <View style={styles.variableRow}>
-            <Text style={styles.inputLabel}>対象変数</Text>
-            <View style={styles.variableSelector}>
-              {variables.map((v) => (
-                <TouchableOpacity
-                  key={v.key}
-                  style={[
-                    styles.variableChip,
-                    action.variable === v.key && styles.variableChipActive,
-                  ]}
-                  onPress={() => handleVariableChange(index, v.key)}
-                >
-                  <Text
-                    style={[
-                      styles.variableChipText,
-                      action.variable === v.key &&
-                        styles.variableChipTextActive,
-                    ]}
-                  >
-                    {v.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+          <View style={styles.transfersSection}>
+            <Text style={styles.inputLabel}>変数と量</Text>
+            {action.transfers.map((transfer, tIndex) =>
+              renderTransferRow(
+                transfer,
+                tIndex,
+                (ti, v) => handleTransferVariableChange(index, ti, v),
+                (ti, t) => handleTransferAmountChange(index, ti, t),
+                (ti) => handleDeleteTransfer(index, ti),
+                action.transfers.length > 1
+              )
+            )}
+            <TouchableOpacity
+              style={styles.addTransferBtn}
+              onPress={() => handleAddTransfer(index)}
+            >
+              <Text style={styles.addTransferBtnText}>+ 変数を追加</Text>
+            </TouchableOpacity>
           </View>
         </View>
       ))}
@@ -183,40 +275,25 @@ export default function PotActionEditor({
                 placeholder="例: リーチ"
               />
             </View>
-            <View style={styles.inputGroupNarrow}>
-              <Text style={styles.inputLabel}>量</Text>
-              <TextInput
-                style={styles.textInput}
-                value={newAmount}
-                onChangeText={setNewAmount}
-                keyboardType="numeric"
-                placeholder="1000"
-              />
-            </View>
           </View>
-          <View style={styles.variableRow}>
-            <Text style={styles.inputLabel}>対象変数</Text>
-            <View style={styles.variableSelector}>
-              {variables.map((v) => (
-                <TouchableOpacity
-                  key={v.key}
-                  style={[
-                    styles.variableChip,
-                    newVariable === v.key && styles.variableChipActive,
-                  ]}
-                  onPress={() => setNewVariable(v.key)}
-                >
-                  <Text
-                    style={[
-                      styles.variableChipText,
-                      newVariable === v.key && styles.variableChipTextActive,
-                    ]}
-                  >
-                    {v.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+          <View style={styles.transfersSection}>
+            <Text style={styles.inputLabel}>変数と量</Text>
+            {newTransfers.map((transfer, tIndex) =>
+              renderTransferRow(
+                transfer,
+                tIndex,
+                handleNewTransferVariableChange,
+                handleNewTransferAmountChange,
+                handleDeleteNewTransfer,
+                newTransfers.length > 1
+              )
+            )}
+            <TouchableOpacity
+              style={styles.addTransferBtn}
+              onPress={handleAddNewTransfer}
+            >
+              <Text style={styles.addTransferBtnText}>+ 変数を追加</Text>
+            </TouchableOpacity>
           </View>
           <View style={styles.addFormActions}>
             <TouchableOpacity
@@ -224,8 +301,9 @@ export default function PotActionEditor({
               onPress={() => {
                 setShowAddForm(false);
                 setNewLabel("");
-                setNewAmount("");
-                setNewVariable(variables[0]?.key || "score");
+                setNewTransfers([
+                  { variable: variables[0]?.key || "score", amount: 0 },
+                ]);
               }}
             >
               <Text style={styles.cancelBtnText}>キャンセル</Text>
@@ -280,9 +358,6 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   inputGroupWide: {
-    flex: 2,
-  },
-  inputGroupNarrow: {
     flex: 1,
   },
   inputLabel: {
@@ -300,17 +375,26 @@ const styles = StyleSheet.create({
     color: "#1f2937",
     backgroundColor: "#f9fafb",
   },
-  variableRow: {
+  transfersSection: {
     marginTop: 8,
+  },
+  transferRow: {
+    marginBottom: 6,
+  },
+  transferContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
   },
   variableSelector: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 6,
+    gap: 4,
+    flex: 1,
   },
   variableChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
     borderRadius: 16,
     borderWidth: 1,
     borderColor: "#d1d5db",
@@ -321,12 +405,51 @@ const styles = StyleSheet.create({
     backgroundColor: "#eff6ff",
   },
   variableChipText: {
-    fontSize: 13,
+    fontSize: 12,
     color: "#6b7280",
   },
   variableChipTextActive: {
     color: "#3b82f6",
     fontWeight: "600",
+  },
+  amountRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  amountInput: {
+    borderWidth: 1,
+    borderColor: "#d1d5db",
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    fontSize: 14,
+    color: "#1f2937",
+    backgroundColor: "#f9fafb",
+    width: 80,
+    textAlign: "right",
+  },
+  transferDeleteBtn: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: "#fef2f2",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  transferDeleteBtnText: {
+    fontSize: 12,
+    color: "#ef4444",
+    fontWeight: "bold",
+  },
+  addTransferBtn: {
+    marginTop: 4,
+    paddingVertical: 6,
+    alignItems: "center",
+  },
+  addTransferBtnText: {
+    fontSize: 12,
+    color: "#6b7280",
   },
   addForm: {
     marginTop: 12,

@@ -338,11 +338,11 @@ export async function updateRoomStatus(
 
 /**
  * スコアを移動（トランザクション更新 + 履歴保存）
+ * 複数変数を一括で移動可能
  * @param roomId - ルームID
  * @param fromId - 送信元ID（"__pot__" またはユーザーID）
  * @param toId - 送信先ID（"__pot__" またはユーザーID）
- * @param amount - 移動する金額
- * @param variable - 移動する変数（デフォルトは "score"）
+ * @param transfers - 移動する変数と金額の配列
  * @param fromName - 送信元の表示名（履歴用、省略時はID）
  * @param toName - 送信先の表示名（履歴用、省略時はID）
  */
@@ -350,16 +350,15 @@ export async function transferScore(
   roomId: string,
   fromId: string,
   toId: string,
-  amount: number,
-  variable: string = "score",
+  transfers: { variable: string; amount: number }[],
   fromName?: string,
   toName?: string
 ): Promise<{ error: Error | null }> {
   try {
-    // 1. 最新の current_state を取得（重要！通信ラグ対策）
+    // 1. 最新の current_state とテンプレートを取得（重要！通信ラグ対策）
     const { data: room, error: fetchError } = await supabase
       .from("rooms")
-      .select("current_state")
+      .select("current_state, template")
       .eq("id", roomId)
       .single();
 
@@ -374,51 +373,53 @@ export async function transferScore(
     // 2. 操作前のスナップショットを作成（履歴用）
     const beforeSnapshot = createSnapshot(room.current_state);
 
-    // 3. 最新データを元に計算
+    // 3. 最新データを元に計算（全transferを一括処理）
     const currentState = { ...room.current_state };
 
-    // Potからの移動
-    if (fromId === "__pot__") {
-      if (
-        !currentState.__pot__ ||
-        (currentState.__pot__[variable] || 0) < amount
-      ) {
-        throw new Error("供託金が不足しています");
-      }
-      currentState.__pot__[variable] -= amount;
+    for (const { variable, amount } of transfers) {
+      // Potからの移動
+      if (fromId === "__pot__") {
+        if (
+          !currentState.__pot__ ||
+          (currentState.__pot__[variable] || 0) < amount
+        ) {
+          throw new Error("供託金が不足しています");
+        }
+        currentState.__pot__[variable] -= amount;
 
-      if (!currentState[toId]) {
-        throw new Error("送信先プレイヤーが見つかりません");
+        if (!currentState[toId]) {
+          throw new Error("送信先プレイヤーが見つかりません");
+        }
+        currentState[toId][variable] =
+          ((currentState[toId][variable] as number) || 0) + amount;
       }
-      currentState[toId][variable] =
-        ((currentState[toId][variable] as number) || 0) + amount;
-    }
-    // Potへの移動
-    else if (toId === "__pot__") {
-      if (!currentState[fromId]) {
-        throw new Error("送信元プレイヤーが見つかりません");
+      // Potへの移動
+      else if (toId === "__pot__") {
+        if (!currentState[fromId]) {
+          throw new Error("送信元プレイヤーが見つかりません");
+        }
+        const fromValue = (currentState[fromId][variable] as number) || 0;
+
+        currentState[fromId][variable] = fromValue - amount;
+
+        if (!currentState.__pot__) {
+          currentState.__pot__ = {};
+        }
+        currentState.__pot__[variable] =
+          (currentState.__pot__[variable] || 0) + amount;
       }
-      const fromValue = (currentState[fromId][variable] as number) || 0;
+      // プレイヤー間の移動
+      else {
+        if (!currentState[fromId] || !currentState[toId]) {
+          throw new Error("プレイヤーが見つかりません");
+        }
 
-      currentState[fromId][variable] = fromValue - amount;
+        const fromValue = (currentState[fromId][variable] as number) || 0;
 
-      if (!currentState.__pot__) {
-        currentState.__pot__ = {};
+        currentState[fromId][variable] = fromValue - amount;
+        currentState[toId][variable] =
+          ((currentState[toId][variable] as number) || 0) + amount;
       }
-      currentState.__pot__[variable] =
-        (currentState.__pot__[variable] || 0) + amount;
-    }
-    // プレイヤー間の移動
-    else {
-      if (!currentState[fromId] || !currentState[toId]) {
-        throw new Error("プレイヤーが見つかりません");
-      }
-
-      const fromValue = (currentState[fromId][variable] as number) || 0;
-
-      currentState[fromId][variable] = fromValue - amount;
-      currentState[toId][variable] =
-        ((currentState[toId][variable] as number) || 0) + amount;
     }
 
     // 4. 履歴エントリを作成
@@ -427,10 +428,21 @@ export async function transferScore(
     const displayToName =
       toName || (toId === "__pot__" ? "供託" : toId.substring(0, 8));
 
+    // 変数ごとの移動内容をまとめてメッセージ化
+    const transferDetails = transfers
+      .map(({ variable, amount }) => {
+        const variableLabel =
+          room.template?.variables?.find(
+            (v: { key: string; label: string }) => v.key === variable
+          )?.label || variable;
+        return `${variableLabel} ${amount.toLocaleString()}`;
+      })
+      .join(", ");
+
     const historyEntry: HistoryEntry = {
       id: generateUUID(),
       timestamp: Date.now(),
-      message: `${displayFromName} → ${displayToName}: ${amount}`,
+      message: `${displayFromName} → ${displayToName}: ${transferDetails}`,
       snapshot: beforeSnapshot,
     };
     // 5. 履歴配列に追加

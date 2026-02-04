@@ -38,7 +38,7 @@ export default function GameScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { user } = useAuth();
-  const { room, loading, error } = useRoomRealtime(id);
+  const { room, loading, error, refetch } = useRoomRealtime(id);
 
   // エラーハンドリング
   useEffect(() => {
@@ -211,17 +211,20 @@ export default function GameScreen() {
   const handleTransfer = async (
     fromId: string,
     toId: string,
-    amount: number
+    transfers: { variable: string; amount: number }[]
   ) => {
     if (!room) return;
 
     try {
-      const { error } = await transferScore(room.id, fromId, toId, amount);
+      const { error } = await transferScore(room.id, fromId, toId, transfers);
 
       if (error) {
         Alert.alert("エラー", error.message);
         return;
       }
+
+      // 操作元クライアントのUIを確実に更新するため手動で再取得
+      await refetch();
 
     } catch (error) {
       console.error("Error transferring score:", error);
@@ -286,6 +289,8 @@ export default function GameScreen() {
         return;
       }
 
+      await refetch();
+
     } catch (error) {
       console.error("Error rolling back:", error);
       Alert.alert("エラー", "ロールバックに失敗しました");
@@ -303,6 +308,8 @@ export default function GameScreen() {
         Alert.alert("エラー", error.message);
         return;
       }
+
+      await refetch();
 
     } catch (error) {
       console.error("Error undoing:", error);

@@ -29,7 +29,7 @@ interface MahjongTableProps {
   currentUserId: string;
   hostUserId: string;
   seats: (SeatInfo | null)[]; // 座席配列
-  onTransfer: (fromId: string, toId: string, amount: number) => Promise<void>;
+  onTransfer: (fromId: string, toId: string, transfers: { variable: string; amount: number }[]) => Promise<void>;
   onJoinSeat: (seatIndex: number) => Promise<void>; // 座席に着席
   isPotEnabled?: boolean;
   potActions?: PotAction[];
@@ -258,19 +258,18 @@ export default function MahjongTable({
         return;
       } else if (potActions.length === 1) {
         // potActionsが1つの場合は即座に実行
-        onTransfer(fromId, "__pot__", potActions[0].amount);
+        onTransfer(fromId, "__pot__", potActions[0].transfers);
       } else {
         // potActionsが複数の場合は選択モーダルを表示
         setPotActionModal({ visible: true, fromId });
       }
     } else if (fromId === "__pot__") {
-      // 供託回収: Pot全額を取得
-      const totalPot = Object.values(pot).reduce(
-        (sum, val) => sum + (val || 0),
-        0
-      );
-      if (totalPot > 0) {
-        onTransfer("__pot__", toId, totalPot);
+      // 供託回収: pot内の全変数をtransfers配列にまとめて一括回収
+      const transfers = Object.entries(pot)
+        .filter(([, value]) => (value || 0) > 0)
+        .map(([variableKey, value]) => ({ variable: variableKey, amount: value as number }));
+      if (transfers.length > 0) {
+        onTransfer("__pot__", toId, transfers);
       }
     } else {
       // 対人支払い: モーダルを表示
@@ -278,9 +277,9 @@ export default function MahjongTable({
     }
   };
 
-  const handlePaymentConfirm = async (amount: number) => {
+  const handlePaymentConfirm = async (transfers: { variable: string; amount: number }[]) => {
     if (paymentModal) {
-      await onTransfer(paymentModal.fromId, paymentModal.toId, amount);
+      await onTransfer(paymentModal.fromId, paymentModal.toId, transfers);
       setPaymentModal(null);
     }
   };
@@ -381,6 +380,7 @@ export default function MahjongTable({
         {isPotEnabled && (
           <PotArea
             pot={pot}
+            variables={variables}
             onDragStart={handleDragStart}
             onDragUpdate={handleDragUpdate}
             onDragEnd={handleDragEnd}
@@ -427,6 +427,7 @@ export default function MahjongTable({
           visible={paymentModal.visible}
           onClose={() => setPaymentModal(null)}
           onConfirm={handlePaymentConfirm}
+          variables={variables}
         />
       )}
 
@@ -436,7 +437,7 @@ export default function MahjongTable({
           visible={potActionModal.visible}
           actions={potActions}
           onSelect={(action) => {
-            onTransfer(potActionModal.fromId, "__pot__", action.amount);
+            onTransfer(potActionModal.fromId, "__pot__", action.transfers);
             setPotActionModal(null);
           }}
           onClose={() => setPotActionModal(null)}

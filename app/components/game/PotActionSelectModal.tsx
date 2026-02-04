@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   StyleSheet,
 } from "react-native";
+
 import { PotAction } from "../../types";
 
 interface PotActionSelectModalProps {
@@ -39,9 +40,13 @@ export default function PotActionSelectModal({
               onPress={() => onSelect(action)}
             >
               <Text style={styles.actionLabel}>{action.label}</Text>
-              <Text style={styles.actionAmount}>
-                -{action.amount.toLocaleString()}
-              </Text>
+              <View style={styles.actionTransfers}>
+                {action.transfers.map((t, i) => (
+                  <Text key={i} style={styles.actionAmount}>
+                    -{t.amount.toLocaleString()}
+                  </Text>
+                ))}
+              </View>
             </TouchableOpacity>
           ))}
 
@@ -90,6 +95,9 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
     color: "#92400e",
+  },
+  actionTransfers: {
+    alignItems: "flex-end",
   },
   actionAmount: {
     fontSize: 16,

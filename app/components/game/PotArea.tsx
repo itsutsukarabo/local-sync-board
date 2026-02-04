@@ -2,10 +2,11 @@ import React, { useRef, useEffect, useCallback } from "react";
 import { View, Text, StyleSheet } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, { useSharedValue, runOnJS } from "react-native-reanimated";
-import { PotState } from "../../types";
+import { PotState, Variable } from "../../types";
 
 interface PotAreaProps {
   pot: PotState;
+  variables: Variable[];
   onDragStart?: (potId: string, x: number, y: number) => void;
   onDragUpdate?: (x: number, y: number) => void;
   onDragEnd?: (x: number, y: number) => void;
@@ -14,6 +15,7 @@ interface PotAreaProps {
 
 export default function PotArea({
   pot,
+  variables,
   onDragStart,
   onDragUpdate,
   onDragEnd,
@@ -81,9 +83,21 @@ export default function PotArea({
       <GestureDetector gesture={gesture}>
         <Animated.View style={styles.potCard}>
           <Text style={styles.label}>供託金</Text>
-          <Text style={styles.score}>
-            {(pot.score || 0).toLocaleString()}
-          </Text>
+          {variables.map((v) => {
+            const value = pot[v.key] || 0;
+            if (variables.length === 1) {
+              return (
+                <Text key={v.key} style={styles.score}>
+                  {value.toLocaleString()}
+                </Text>
+              );
+            }
+            return (
+              <Text key={v.key} style={styles.scoreMulti}>
+                {v.label}: {value.toLocaleString()}
+              </Text>
+            );
+          })}
         </Animated.View>
       </GestureDetector>
     </View>
@@ -124,6 +138,11 @@ const styles = StyleSheet.create({
   score: {
     fontSize: 20,
     fontWeight: "bold",
+    color: "#92400e",
+  },
+  scoreMulti: {
+    fontSize: 14,
+    fontWeight: "600",
     color: "#92400e",
   },
 });
