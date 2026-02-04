@@ -858,6 +858,24 @@ export async function updateTemplate(
           }
         }
       }
+
+      // 履歴のsnapshotにも新変数のデフォルト値を挿入
+      const history: HistoryEntry[] = currentState.__history__ || [];
+      for (const entry of history) {
+        const snapshotPlayerIds = Object.keys(entry.snapshot).filter(
+          (key) => !key.startsWith("__")
+        );
+        for (const playerId of snapshotPlayerIds) {
+          const playerSnapshot = entry.snapshot[playerId];
+          if (playerSnapshot && typeof playerSnapshot === "object") {
+            for (const variable of templateUpdate.variables) {
+              if ((playerSnapshot as any)[variable.key] === undefined) {
+                (playerSnapshot as any)[variable.key] = variable.initial;
+              }
+            }
+          }
+        }
+      }
     }
 
     // 4. Supabaseに保存
