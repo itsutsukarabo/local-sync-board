@@ -988,6 +988,102 @@ export async function forceEditScore(
 }
 
 /**
+ * 選択した変数を全プレイヤーで初期値にリセット（供託金も含む）
+ * @param roomId - ルームID
+ * @param variableKeys - リセット対象の変数キー配列
+ */
+export async function resetScores(
+  roomId: string,
+  variableKeys: string[]
+): Promise<{ error: Error | null }> {
+  try {
+    // 1. 最新の current_state とテンプレートを取得
+    const { data: room, error: fetchError } = await supabase
+      .from("rooms")
+      .select("current_state, template")
+      .eq("id", roomId)
+      .single();
+
+    if (fetchError) {
+      throw fetchError;
+    }
+
+    if (!room) {
+      throw new Error("ルームが見つかりません");
+    }
+
+    const currentState = { ...room.current_state };
+
+    // 2. 操作前のスナップショットを作成
+    const beforeSnapshot = createSnapshot(currentState);
+
+    // 3. 全プレイヤーの選択変数を initial に上書き
+    const playerIds = Object.keys(currentState).filter(
+      (key) => !key.startsWith("__")
+    );
+    for (const playerId of playerIds) {
+      for (const varKey of variableKeys) {
+        const variable = room.template?.variables?.find(
+          (v: { key: string }) => v.key === varKey
+        );
+        if (variable) {
+          currentState[playerId][varKey] = variable.initial;
+        }
+      }
+    }
+
+    // 4. __pot__ の選択変数を 0 にリセット
+    if (currentState.__pot__) {
+      for (const varKey of variableKeys) {
+        if (currentState.__pot__[varKey] !== undefined) {
+          currentState.__pot__[varKey] = 0;
+        }
+      }
+    }
+
+    // 5. 履歴メッセージを作成
+    const labels = variableKeys
+      .map((key) => {
+        const variable = room.template?.variables?.find(
+          (v: { key: string; label: string }) => v.key === key
+        );
+        return variable?.label || key;
+      })
+      .join(", ");
+
+    const historyEntry: HistoryEntry = {
+      id: generateUUID(),
+      timestamp: Date.now(),
+      message: `🔄 リセット: ${labels}`,
+      snapshot: beforeSnapshot,
+    };
+
+    // 6. 履歴に追加して保存
+    const existingHistory = currentState.__history__ || [];
+    currentState.__history__ = [...existingHistory, historyEntry];
+
+    const { error: updateError } = await supabase
+      .from("rooms")
+      .update({ current_state: currentState })
+      .eq("id", roomId);
+
+    if (updateError) {
+      throw updateError;
+    }
+
+    return { error: null };
+  } catch (error) {
+    console.error("Error resetting scores:", error);
+    return {
+      error:
+        error instanceof Error
+          ? error
+          : new Error("スコアのリセットに失敗しました"),
+    };
+  }
+}
+
+/**
  * 直前の操作を取り消す（Undo）
  * @param roomId - ルームID
  * @returns エラー情報

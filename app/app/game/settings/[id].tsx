@@ -22,6 +22,7 @@ import { Variable, PotAction } from "../../../types";
 import VariableEditor from "../../../components/settings/VariableEditor";
 import PotActionEditor from "../../../components/settings/PotActionEditor";
 import PlayerScoreEditor from "../../../components/settings/PlayerScoreEditor";
+import ResetSection from "../../../components/settings/ResetSection";
 
 export default function RoomSettingsScreen() {
   const router = useRouter();
@@ -213,9 +214,11 @@ function SettingsContent({
           <Text style={styles.sectionDescription}>
             選択した変数を全プレイヤーで初期値に戻します
           </Text>
-          <Text style={styles.placeholder}>
-            (Task 3.5-7で実装予定)
-          </Text>
+          <ResetSection
+            roomId={room.id}
+            variables={room.template.variables}
+            potEnabled={room.template.potEnabled}
+          />
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -343,12 +346,5 @@ const styles = StyleSheet.create({
     color: "#9ca3af",
     textAlign: "center",
     paddingVertical: 12,
-  },
-  placeholder: {
-    fontSize: 12,
-    color: "#9ca3af",
-    fontStyle: "italic",
-    textAlign: "center",
-    marginTop: 8,
   },
 });
