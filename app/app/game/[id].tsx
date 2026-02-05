@@ -168,6 +168,9 @@ export default function GameScreen() {
         return;
       }
 
+      // 操作元クライアントのUIを確実に更新するため手動で再取得
+      await refetch();
+
     } catch (error) {
       console.error("Error joining game:", error);
       Alert.alert("エラー", "ゲームへの参加に失敗しました");
@@ -197,6 +200,9 @@ export default function GameScreen() {
             if (error) {
               throw error;
             }
+
+            // 操作元クライアントのUIを確実に更新するため手動で再取得
+            await refetch();
 
           } catch (error) {
             console.error("Error leaving game:", error);
@@ -244,6 +250,9 @@ export default function GameScreen() {
         return;
       }
 
+      // 操作元クライアントのUIを確実に更新するため手動で再取得
+      await refetch();
+
     } catch (error) {
       console.error("Error joining seat:", error);
       Alert.alert("エラー", "座席への着席に失敗しました");
@@ -267,6 +276,9 @@ export default function GameScreen() {
               Alert.alert("エラー", error.message);
               return;
             }
+
+            // 操作元クライアントのUIを確実に更新するため手動で再取得
+            await refetch();
 
           } catch (error) {
             console.error("Error leaving seat:", error);
