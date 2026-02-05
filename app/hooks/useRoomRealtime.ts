@@ -24,6 +24,9 @@ export function useRoomRealtime(roomId: string | null): UseRoomRealtimeResult {
   const [room, setRoom] = useState<Room | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+  const mountTimeRef = useRef(Date.now());
+  const dbg = (msg: string, ...args: unknown[]) =>
+    console.log(`[useRoomRealtime +${Date.now() - mountTimeRef.current}ms]`, msg, ...args);
 
   // 手動でデータを再取得する関数
   const refetch = useCallback(async () => {
@@ -54,7 +57,9 @@ export function useRoomRealtime(roomId: string | null): UseRoomRealtimeResult {
   refetchRef.current = refetch;
 
   useEffect(() => {
+    dbg("useEffect fired, roomId =", roomId);
     if (!roomId) {
+      dbg("roomId is falsy → setLoading(false)");
       setRoom(null);
       setLoading(false);
       return;
@@ -64,15 +69,18 @@ export function useRoomRealtime(roomId: string | null): UseRoomRealtimeResult {
 
     // 初期データの取得
     const fetchInitialData = async () => {
+      dbg("fetchInitialData START");
       try {
         setLoading(true);
         setError(null);
 
+        dbg("supabase query START");
         const { data, error: fetchError } = await supabase
           .from("rooms")
           .select("*")
           .eq("id", roomId)
           .single();
+        dbg("supabase query END, hasData:", !!data, "hasError:", !!fetchError);
 
         if (fetchError) {
           throw fetchError;
@@ -84,13 +92,16 @@ export function useRoomRealtime(roomId: string | null): UseRoomRealtimeResult {
 
         const roomData = data as Room;
         roomData.template = migrateTemplate(roomData.template);
+        dbg("setRoom (data received)");
         setRoom(roomData);
       } catch (err) {
+        dbg("fetchInitialData CATCH:", err);
         console.error("Error fetching room:", err);
         setError(
           err instanceof Error ? err : new Error("ルームの取得に失敗しました")
         );
       } finally {
+        dbg("fetchInitialData FINALLY → setLoading(false)");
         setLoading(false);
       }
     };
@@ -99,6 +110,7 @@ export function useRoomRealtime(roomId: string | null): UseRoomRealtimeResult {
     // チャンネル名をユニーク化し、複数画面で同名チャンネルの衝突を防止
     const channelId = `room-${roomId}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const setupRealtimeSubscription = () => {
+      dbg("setupRealtimeSubscription, channelId =", channelId);
       channel = supabase
         .channel(channelId)
         .on(
@@ -135,6 +147,7 @@ export function useRoomRealtime(roomId: string | null): UseRoomRealtimeResult {
 
     // クリーンアップ
     return () => {
+      dbg("cleanup: removing channel");
       if (channel) {
         supabase.removeChannel(channel);
       }

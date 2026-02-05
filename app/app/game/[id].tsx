@@ -41,6 +41,8 @@ export default function GameScreen() {
   const { user } = useAuth();
   const { room, loading, error, refetch } = useRoomRealtime(id);
 
+  console.log("[GameScreen render]", { id, loading, hasRoom: !!room, hasError: !!error, hasUser: !!user });
+
   // エラーハンドリング
   useEffect(() => {
     if (error) {
