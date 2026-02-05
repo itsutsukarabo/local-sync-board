@@ -50,17 +50,52 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   /**
+   * プロファイルをリトライ付きで取得
+   * 匿名ログイン直後はDBトリガーによるprofile自動作成が遅延する場合があるため
+   */
+  const fetchProfileWithRetry = async (
+    userId: string,
+    maxRetries = 3
+  ): Promise<Profile | null> => {
+    for (let i = 0; i < maxRetries; i++) {
+      const profileData = await fetchProfile(userId);
+      if (profileData) return profileData;
+      // トリガーによるprofile作成を待つ（500ms, 1000ms, 1500ms）
+      await new Promise((r) => setTimeout(r, 500 * (i + 1)));
+    }
+    return null;
+  };
+
+  /**
    * 初期化：セッションの確認と復元
    */
   useEffect(() => {
     let mounted = true;
+    const AUTH_TIMEOUT_MS = 10000;
+
+    /** タイムアウト付きPromiseラッパー */
+    const withTimeout = <T,>(
+      promise: Promise<T>,
+      ms: number,
+      label: string
+    ): Promise<T> =>
+      Promise.race([
+        promise,
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error(`${label} タイムアウト (${ms}ms)`)), ms)
+        ),
+      ]);
 
     const initializeAuth = async () => {
       try {
-        // 既存のセッションを確認
+        // 既存のセッションを確認（タイムアウト付き）
         const {
           data: { session: currentSession },
-        } = await supabase.auth.getSession();
+        } = await withTimeout(
+          supabase.auth.getSession(),
+          AUTH_TIMEOUT_MS,
+          "セッション取得"
+        );
 
         if (!mounted) return;
 
@@ -74,8 +109,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setProfile(profileData);
           }
         } else {
-          // セッションがない場合は匿名ログインを実行
-          await signInAnonymously();
+          // セッションがない場合は匿名ログインを実行（タイムアウト付き）
+          const { data, error } = await withTimeout(
+            supabase.auth.signInAnonymously(),
+            AUTH_TIMEOUT_MS,
+            "匿名ログイン"
+          );
+
+          if (error) throw error;
+          if (!mounted) return;
+
+          if (data.user) {
+            setUser(data.user);
+            setSession(data.session);
+
+            // リトライ付きでプロファイルを取得（トリガー遅延対策）
+            const profileData = await fetchProfileWithRetry(data.user.id);
+            if (mounted) {
+              setProfile(profileData);
+            }
+          }
         }
       } catch (error) {
         console.error("認証初期化エラー:", error);
@@ -98,7 +151,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(currentSession?.user ?? null);
 
       if (currentSession?.user) {
-        const profileData = await fetchProfile(currentSession.user.id);
+        const profileData = await fetchProfileWithRetry(currentSession.user.id);
         if (mounted) {
           setProfile(profileData);
         }
@@ -115,30 +168,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   /**
    * 匿名ログイン
+   * 注: loading制御は呼び出し元(initializeAuth)が管理する
    */
   const signInAnonymously = async () => {
-    try {
-      setLoading(true);
-      const { data, error } = await supabase.auth.signInAnonymously();
+    const { data, error } = await supabase.auth.signInAnonymously();
 
-      if (error) {
-        console.error("匿名ログインエラー:", error);
-        throw error;
-      }
-
-      if (data.user) {
-        setUser(data.user);
-        setSession(data.session);
-
-        // プロファイルを取得（トリガーで自動作成されている）
-        const profileData = await fetchProfile(data.user.id);
-        setProfile(profileData);
-      }
-    } catch (error) {
-      console.error("匿名ログイン例外:", error);
+    if (error) {
+      console.error("匿名ログインエラー:", error);
       throw error;
-    } finally {
-      setLoading(false);
+    }
+
+    if (data.user) {
+      setUser(data.user);
+      setSession(data.session);
+
+      // リトライ付きでプロファイルを取得（トリガー遅延対策）
+      const profileData = await fetchProfileWithRetry(data.user.id);
+      setProfile(profileData);
     }
   };
 

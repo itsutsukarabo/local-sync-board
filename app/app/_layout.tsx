@@ -1,25 +1,31 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Stack, useRouter, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { AuthProvider } from "../contexts/AuthContext";
 import { useAuth } from "../hooks/useAuth";
-import { View, ActivityIndicator, StyleSheet } from "react-native";
+import {
+  View,
+  Text,
+  ActivityIndicator,
+  TouchableOpacity,
+  StyleSheet,
+} from "react-native";
 
 /**
  * Auth Guard コンポーネント
  * 認証状態に基づいてリダイレクトを制御
  */
 function AuthGuard({ children }: { children: React.ReactNode }) {
-  const { user, profile, loading } = useAuth();
+  const { user, profile, loading, signInAnonymously } = useAuth();
   const segments = useSegments();
   const router = useRouter();
+  const [retrying, setRetrying] = useState(false);
 
   useEffect(() => {
     if (loading) return;
 
     const inAuthGroup = segments[0] === "(auth)";
-    const inTabsGroup = segments[0] === "(tabs)";
 
     // 認証状態に基づいてリダイレクト
     if (!user) {
@@ -45,6 +51,41 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#2563eb" />
+      </View>
+    );
+  }
+
+  // 認証失敗時のリトライ画面
+  if (!loading && !user) {
+    const handleRetry = async () => {
+      setRetrying(true);
+      try {
+        await signInAnonymously();
+      } catch (e) {
+        console.error("リトライ失敗:", e);
+      } finally {
+        setRetrying(false);
+      }
+    };
+
+    return (
+      <View style={styles.errorContainer}>
+        <Text style={styles.errorTitle}>接続できませんでした</Text>
+        <Text style={styles.errorMessage}>
+          ネットワーク接続を確認して{"\n"}もう一度お試しください
+        </Text>
+        <TouchableOpacity
+          style={styles.retryButton}
+          onPress={handleRetry}
+          disabled={retrying}
+          activeOpacity={0.8}
+        >
+          {retrying ? (
+            <ActivityIndicator color="#ffffff" />
+          ) : (
+            <Text style={styles.retryButtonText}>再試行</Text>
+          )}
+        </TouchableOpacity>
       </View>
     );
   }
@@ -80,5 +121,37 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     backgroundColor: "#ffffff",
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#ffffff",
+    paddingHorizontal: 32,
+  },
+  errorTitle: {
+    fontSize: 20,
+    fontWeight: "bold",
+    color: "#374151",
+    marginBottom: 12,
+  },
+  errorMessage: {
+    fontSize: 15,
+    color: "#6b7280",
+    textAlign: "center",
+    lineHeight: 22,
+    marginBottom: 32,
+  },
+  retryButton: {
+    backgroundColor: "#2563eb",
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 40,
+    alignItems: "center",
+  },
+  retryButtonText: {
+    color: "#ffffff",
+    fontSize: 16,
+    fontWeight: "bold",
   },
 });
