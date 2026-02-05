@@ -904,6 +904,90 @@ export async function updateTemplate(
 }
 
 /**
+ * プレイヤーのスコアを強制編集（ホスト用）
+ * @param roomId - ルームID
+ * @param playerId - 対象プレイヤーのID
+ * @param updates - 上書きする変数と値のマップ
+ */
+export async function forceEditScore(
+  roomId: string,
+  playerId: string,
+  updates: Record<string, number>
+): Promise<{ error: Error | null }> {
+  try {
+    // 1. 最新の current_state とテンプレートを取得
+    const { data: room, error: fetchError } = await supabase
+      .from("rooms")
+      .select("current_state, template")
+      .eq("id", roomId)
+      .single();
+
+    if (fetchError) {
+      throw fetchError;
+    }
+
+    if (!room) {
+      throw new Error("ルームが見つかりません");
+    }
+
+    const currentState = { ...room.current_state };
+
+    if (!currentState[playerId]) {
+      throw new Error("プレイヤーが見つかりません");
+    }
+
+    // 2. 操作前のスナップショットを作成
+    const beforeSnapshot = createSnapshot(currentState);
+
+    // 3. 値を上書き
+    for (const [key, value] of Object.entries(updates)) {
+      currentState[playerId][key] = value;
+    }
+
+    // 4. 履歴メッセージを作成
+    const details = Object.entries(updates)
+      .map(([key, value]) => {
+        const label =
+          room.template?.variables?.find(
+            (v: { key: string; label: string }) => v.key === key
+          )?.label || key;
+        return `${label}: ${value.toLocaleString()}`;
+      })
+      .join(", ");
+
+    const historyEntry: HistoryEntry = {
+      id: generateUUID(),
+      timestamp: Date.now(),
+      message: `✏️ 強制編集: ${playerId.substring(0, 8)} - ${details}`,
+      snapshot: beforeSnapshot,
+    };
+
+    // 5. 履歴に追加して保存
+    const existingHistory = currentState.__history__ || [];
+    currentState.__history__ = [...existingHistory, historyEntry];
+
+    const { error: updateError } = await supabase
+      .from("rooms")
+      .update({ current_state: currentState })
+      .eq("id", roomId);
+
+    if (updateError) {
+      throw updateError;
+    }
+
+    return { error: null };
+  } catch (error) {
+    console.error("Error force editing score:", error);
+    return {
+      error:
+        error instanceof Error
+          ? error
+          : new Error("スコアの強制編集に失敗しました"),
+    };
+  }
+}
+
+/**
  * 直前の操作を取り消す（Undo）
  * @param roomId - ルームID
  * @returns エラー情報

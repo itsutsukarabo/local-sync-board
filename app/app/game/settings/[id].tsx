@@ -21,6 +21,7 @@ import { updateTemplate } from "../../../lib/roomApi";
 import { Variable, PotAction } from "../../../types";
 import VariableEditor from "../../../components/settings/VariableEditor";
 import PotActionEditor from "../../../components/settings/PotActionEditor";
+import PlayerScoreEditor from "../../../components/settings/PlayerScoreEditor";
 
 export default function RoomSettingsScreen() {
   const router = useRouter();
@@ -197,33 +198,13 @@ function SettingsContent({
           <Text style={styles.sectionDescription}>
             各プレイヤーのスコアを確認・編集できます
           </Text>
-          {players.length === 0 ? (
-            <Text style={styles.emptyText}>参加中のプレイヤーはいません</Text>
-          ) : (
-            players.map((playerId) => {
-              const playerState = room.current_state[playerId];
-              return (
-                <View key={playerId} style={styles.listItem}>
-                  <Text style={styles.listItemLabel}>
-                    {playerId === user?.id
-                      ? `${playerId.substring(0, 8)}... (あなた)`
-                      : `${playerId.substring(0, 8)}...`}
-                  </Text>
-                  <Text style={styles.listItemValue}>
-                    {room.template.variables
-                      .map(
-                        (v: Variable) =>
-                          `${v.label}: ${((playerState?.[v.key] as number) || 0).toLocaleString()}`
-                      )
-                      .join(" / ")}
-                  </Text>
-                </View>
-              );
-            })
-          )}
-          <Text style={styles.placeholder}>
-            (Task 3.5-6で編集UI実装予定)
-          </Text>
+          <PlayerScoreEditor
+            roomId={room.id}
+            players={players}
+            currentState={room.current_state}
+            variables={room.template.variables}
+            currentUserId={user?.id}
+          />
         </View>
 
         {/* リセットセクション */}
