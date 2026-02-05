@@ -3,7 +3,7 @@
  * Supabase Realtimeを使用してルームの変更を監視
  */
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { supabase } from "../lib/supabase";
 import { Room } from "../types";
 import { migrateTemplate } from "../utils/roomUtils";
@@ -49,6 +49,10 @@ export function useRoomRealtime(roomId: string | null): UseRoomRealtimeResult {
     }
   }, [roomId]);
 
+  // stale closure対策: Realtimeコールバック内で常に最新のrefetchを参照
+  const refetchRef = useRef(refetch);
+  refetchRef.current = refetch;
+
   useEffect(() => {
     if (!roomId) {
       setRoom(null);
@@ -92,9 +96,11 @@ export function useRoomRealtime(roomId: string | null): UseRoomRealtimeResult {
     };
 
     // Realtime購読の設定
+    // チャンネル名をユニーク化し、複数画面で同名チャンネルの衝突を防止
+    const channelId = `room-${roomId}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const setupRealtimeSubscription = () => {
       channel = supabase
-        .channel(`room-${roomId}`)
+        .channel(channelId)
         .on(
           "postgres_changes",
           {
@@ -103,10 +109,8 @@ export function useRoomRealtime(roomId: string | null): UseRoomRealtimeResult {
             table: "rooms",
             filter: `id=eq.${roomId}`,
           },
-          (payload) => {
-            const updatedRoom = payload.new as Room;
-            updatedRoom.template = migrateTemplate(updatedRoom.template);
-            setRoom(updatedRoom);
+          () => {
+            refetchRef.current();
           }
         )
         .on(
@@ -117,7 +121,7 @@ export function useRoomRealtime(roomId: string | null): UseRoomRealtimeResult {
             table: "rooms",
             filter: `id=eq.${roomId}`,
           },
-          (payload) => {
+          () => {
             setRoom(null);
             setError(new Error("ルームが削除されました"));
           }
