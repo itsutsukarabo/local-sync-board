@@ -108,7 +108,12 @@ export default function RootLayout() {
               headerShown: false,
               contentStyle: { backgroundColor: "#ffffff" },
             }}
-          />
+          >
+            <Stack.Screen
+              name="game/[id]"
+              options={{ gestureEnabled: false }}
+            />
+          </Stack>
         </AuthGuard>
       </AuthProvider>
     </GestureHandlerRootView>
