@@ -4,6 +4,7 @@
  */
 
 import { useEffect, useState, useCallback, useRef } from "react";
+import { AppState } from "react-native";
 import { supabase } from "../lib/supabase";
 import { Room } from "../types";
 import { migrateTemplate } from "../utils/roomUtils";
@@ -152,6 +153,16 @@ export function useRoomRealtime(roomId: string | null): UseRoomRealtimeResult {
         supabase.removeChannel(channel);
       }
     };
+  }, [roomId]);
+
+  // アプリ復帰時にデータを再取得
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (nextAppState) => {
+      if (nextAppState === "active" && roomId) {
+        refetchRef.current();
+      }
+    });
+    return () => subscription.remove();
   }, [roomId]);
 
   return { room, loading, error, refetch };
