@@ -3,7 +3,7 @@
  * ルームのリアルタイム同期とプレイヤー一覧表示
  */
 
-import React, { useEffect } from "react";
+import React, { useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -12,6 +12,7 @@ import {
   TouchableOpacity,
   Alert,
   ActivityIndicator,
+  BackHandler,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -51,6 +52,51 @@ export default function GameScreen() {
       ]);
     }
   }, [error]);
+
+  // ユーザーが座席に座っているかチェック（フック依存のため早期リターン前に計算）
+  const isUserSeated =
+    room?.seats?.some((seat) => seat && seat.userId === user?.id) || false;
+
+  // 戻るボタンハンドラー（着席中なら離席確認ダイアログ表示）
+  const handleBack = useCallback(() => {
+    if (isUserSeated && room) {
+      Alert.alert(
+        "部屋を離れますか？",
+        "離席して部屋を出ます。\nデータは保持されます。",
+        [
+          { text: "キャンセル", style: "cancel" },
+          {
+            text: "離席して戻る",
+            style: "destructive",
+            onPress: async () => {
+              try {
+                const { error } = await leaveSeat(room.id);
+                if (error) {
+                  Alert.alert("エラー", error.message);
+                  return;
+                }
+              } catch (error) {
+                console.error("Error leaving seat on back:", error);
+                Alert.alert("エラー", "離席に失敗しました");
+                return;
+              }
+              router.back();
+            },
+          },
+        ]
+      );
+      return true;
+    } else {
+      router.back();
+      return true;
+    }
+  }, [isUserSeated, room, router]);
+
+  // Androidハードウェアバックボタン対応
+  useEffect(() => {
+    const subscription = BackHandler.addEventListener("hardwareBackPress", handleBack);
+    return () => subscription.remove();
+  }, [handleBack]);
 
   if (loading) {
     return (
@@ -329,10 +375,6 @@ export default function GameScreen() {
     }
   };
 
-  // ユーザーが座席に座っているかチェック
-  const isUserSeated =
-    room?.seats?.some((seat) => seat && seat.userId === user?.id) || false;
-
   // 履歴を取得
   const history: HistoryEntry[] = room?.current_state?.__history__ || [];
 
@@ -341,7 +383,7 @@ export default function GameScreen() {
       {/* ヘッダー */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
-          <TouchableOpacity onPress={() => router.back()}>
+          <TouchableOpacity onPress={handleBack}>
             <Text style={styles.backButton}>← 戻る</Text>
           </TouchableOpacity>
         </View>
