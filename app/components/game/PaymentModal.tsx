@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Modal,
   View,
@@ -6,6 +6,7 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
+  ScrollView,
 } from "react-native";
 import { Variable } from "../../types";
 
@@ -22,21 +23,51 @@ export default function PaymentModal({
   onConfirm,
   variables,
 }: PaymentModalProps) {
-  const [amount, setAmount] = useState("");
-  const [selectedVariable, setSelectedVariable] = useState(
-    variables[0]?.key || "score"
-  );
+  // 各変数の金額を管理（文字列で保持）
+  const [amounts, setAmounts] = useState<{ [key: string]: string }>({});
 
-  const handleConfirm = () => {
-    const numAmount = parseInt(amount, 10);
-    if (isNaN(numAmount) || numAmount <= 0) {
-      return;
+  // モーダルが開くたびに全変数を0で初期化
+  useEffect(() => {
+    if (visible) {
+      const initial: { [key: string]: string } = {};
+      variables.forEach((v) => {
+        initial[v.key] = "0";
+      });
+      setAmounts(initial);
     }
-    onConfirm([{ variable: selectedVariable, amount: numAmount }]);
-    setAmount("");
+  }, [visible, variables]);
+
+  const handleAmountChange = (key: string, value: string) => {
+    // 数字のみ許可
+    const numericValue = value.replace(/[^0-9]/g, "");
+    setAmounts((prev) => ({ ...prev, [key]: numericValue }));
   };
 
-  const quickAmounts = [1000, 2000, 3000, 5000, 8000, 12000];
+  const handleQuickAmount = (key: string, amount: number) => {
+    setAmounts((prev) => ({ ...prev, [key]: amount.toString() }));
+  };
+
+  const handleConfirm = () => {
+    // 0より大きい値を持つ変数のみtransfersに含める
+    const transfers = variables
+      .map((v) => ({
+        variable: v.key,
+        amount: parseInt(amounts[v.key] || "0", 10),
+      }))
+      .filter((t) => t.amount > 0);
+
+    if (transfers.length === 0) {
+      return;
+    }
+
+    onConfirm(transfers);
+  };
+
+  // 1つ以上の変数が0より大きい値を持っているか
+  const hasValidAmount = variables.some((v) => {
+    const amount = parseInt(amounts[v.key] || "0", 10);
+    return amount > 0;
+  });
 
   return (
     <Modal
@@ -49,55 +80,44 @@ export default function PaymentModal({
         <View style={styles.modal}>
           <Text style={styles.title}>支払い金額を入力</Text>
 
-          {/* 変数選択（複数ある場合のみ表示） */}
-          {variables.length > 1 && (
-            <View style={styles.variableSelector}>
-              {variables.map((v) => (
-                <TouchableOpacity
-                  key={v.key}
-                  style={[
-                    styles.variableButton,
-                    selectedVariable === v.key && styles.variableButtonActive,
-                  ]}
-                  onPress={() => setSelectedVariable(v.key)}
-                >
-                  <Text
-                    style={[
-                      styles.variableButtonText,
-                      selectedVariable === v.key &&
-                        styles.variableButtonTextActive,
-                    ]}
-                  >
-                    {v.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
+          <ScrollView style={styles.variableList}>
+            {variables.map((variable) => (
+              <View key={variable.key} style={styles.variableRow}>
+                {/* ラベルと入力欄 */}
+                <View style={styles.inputRow}>
+                  <Text style={styles.label}>{variable.label}</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={amounts[variable.key] || "0"}
+                    onChangeText={(value) =>
+                      handleAmountChange(variable.key, value)
+                    }
+                    keyboardType="numeric"
+                    selectTextOnFocus
+                  />
+                </View>
 
-          <TextInput
-            style={styles.input}
-            value={amount}
-            onChangeText={setAmount}
-            keyboardType="numeric"
-            placeholder="金額を入力"
-            placeholderTextColor="#9ca3af"
-          />
-
-          {/* クイック選択ボタン */}
-          <View style={styles.quickButtons}>
-            {quickAmounts.map((quickAmount) => (
-              <TouchableOpacity
-                key={quickAmount}
-                style={styles.quickButton}
-                onPress={() => setAmount(quickAmount.toString())}
-              >
-                <Text style={styles.quickButtonText}>
-                  {quickAmount.toLocaleString()}
-                </Text>
-              </TouchableOpacity>
+                {/* クイック選択ボタン（quickAmountsが設定されている場合のみ） */}
+                {variable.quickAmounts && variable.quickAmounts.length > 0 && (
+                  <View style={styles.quickButtons}>
+                    {variable.quickAmounts.map((quickAmount) => (
+                      <TouchableOpacity
+                        key={quickAmount}
+                        style={styles.quickButton}
+                        onPress={() =>
+                          handleQuickAmount(variable.key, quickAmount)
+                        }
+                      >
+                        <Text style={styles.quickButtonText}>
+                          {quickAmount.toLocaleString()}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+              </View>
             ))}
-          </View>
+          </ScrollView>
 
           {/* アクションボタン */}
           <View style={styles.actions}>
@@ -108,10 +128,22 @@ export default function PaymentModal({
               <Text style={styles.cancelButtonText}>キャンセル</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.button, styles.confirmButton]}
+              style={[
+                styles.button,
+                styles.confirmButton,
+                !hasValidAmount && styles.confirmButtonDisabled,
+              ]}
               onPress={handleConfirm}
+              disabled={!hasValidAmount}
             >
-              <Text style={styles.confirmButtonText}>支払う</Text>
+              <Text
+                style={[
+                  styles.confirmButtonText,
+                  !hasValidAmount && styles.confirmButtonTextDisabled,
+                ]}
+              >
+                支払う
+              </Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -131,8 +163,9 @@ const styles = StyleSheet.create({
     backgroundColor: "#ffffff",
     borderRadius: 16,
     padding: 24,
-    width: "80%",
+    width: "85%",
     maxWidth: 400,
+    maxHeight: "80%",
   },
   title: {
     fontSize: 20,
@@ -141,61 +174,57 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     textAlign: "center",
   },
-  variableSelector: {
+  variableList: {
+    maxHeight: 300,
+  },
+  variableRow: {
+    marginBottom: 16,
+  },
+  inputRow: {
     flexDirection: "row",
-    justifyContent: "center",
-    marginBottom: 12,
-    gap: 8,
+    alignItems: "center",
+    justifyContent: "space-between",
   },
-  variableButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
-    backgroundColor: "#f3f4f6",
-    borderWidth: 1,
-    borderColor: "#e5e7eb",
-  },
-  variableButtonActive: {
-    backgroundColor: "#3b82f6",
-    borderColor: "#3b82f6",
-  },
-  variableButtonText: {
-    fontSize: 14,
-    color: "#6b7280",
+  label: {
+    fontSize: 16,
+    color: "#374151",
     fontWeight: "500",
-  },
-  variableButtonTextActive: {
-    color: "#ffffff",
+    flex: 1,
   },
   input: {
     borderWidth: 2,
     borderColor: "#e5e7eb",
     borderRadius: 8,
-    padding: 12,
+    padding: 10,
     fontSize: 18,
-    textAlign: "center",
-    marginBottom: 8,
+    textAlign: "right",
+    width: 120,
+    backgroundColor: "#f9fafb",
   },
   quickButtons: {
     flexDirection: "row",
     flexWrap: "wrap",
-    justifyContent: "center",
-    marginBottom: 16,
+    marginTop: 8,
+    justifyContent: "flex-end",
+    gap: 6,
   },
   quickButton: {
     backgroundColor: "#f3f4f6",
     paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    margin: 4,
+    paddingVertical: 6,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
   },
   quickButtonText: {
     fontSize: 14,
-    color: "#1f2937",
+    color: "#374151",
+    fontWeight: "500",
   },
   actions: {
     flexDirection: "row",
     justifyContent: "space-between",
+    marginTop: 16,
   },
   button: {
     flex: 1,
@@ -214,9 +243,15 @@ const styles = StyleSheet.create({
   confirmButton: {
     backgroundColor: "#3b82f6",
   },
+  confirmButtonDisabled: {
+    backgroundColor: "#9ca3af",
+  },
   confirmButtonText: {
     color: "#ffffff",
     textAlign: "center",
     fontWeight: "600",
+  },
+  confirmButtonTextDisabled: {
+    color: "#e5e7eb",
   },
 });

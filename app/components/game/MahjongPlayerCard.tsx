@@ -20,13 +20,9 @@ interface MahjongPlayerCardProps {
   onPositionMeasured?: (playerId: string, x: number, y: number) => void;
 }
 
-function formatDisconnectDuration(disconnectedAt: number): string {
-  const elapsed = Math.floor((Date.now() - disconnectedAt) / 1000);
-  const minutes = Math.floor(elapsed / 60);
-  const seconds = elapsed % 60;
-  if (minutes > 0)
-    return `切断中 ${minutes}分${seconds.toString().padStart(2, "0")}秒`;
-  return `切断中 ${seconds}秒`;
+function formatDisconnectSeconds(disconnectedAt: number): string {
+  const seconds = Math.floor((Date.now() - disconnectedAt) / 1000);
+  return `${seconds}秒`;
 }
 
 export default function MahjongPlayerCard({
@@ -106,6 +102,15 @@ export default function MahjongPlayerCard({
 
   return (
     <View style={[styles.container, positionStyle]} ref={viewRef}>
+      {/* 接続切れバッジ - カードの右上に配置 */}
+      {disconnectedAt != null && (
+        <View style={styles.disconnectBadge}>
+          <Text style={styles.disconnectBadgeText}>
+            {formatDisconnectSeconds(disconnectedAt)}
+          </Text>
+        </View>
+      )}
+
       <GestureDetector gesture={gesture}>
         <Animated.View style={styles.card}>
           <View style={styles.header}>
@@ -114,11 +119,6 @@ export default function MahjongPlayerCard({
               {isCurrentUser ? "あなた" : displayName || `Player ${playerId.slice(0, 4)}`}
             </Text>
           </View>
-          {disconnectedAt != null && (
-            <Text style={styles.disconnectText}>
-              {formatDisconnectDuration(disconnectedAt)}
-            </Text>
-          )}
           {variables.map((variable) => {
             const value = playerState[variable.key];
             if (typeof value !== "number") return null;
@@ -139,6 +139,24 @@ export default function MahjongPlayerCard({
 const styles = StyleSheet.create({
   container: {
     zIndex: 1,
+    position: "relative",
+  },
+  disconnectBadge: {
+    position: "absolute",
+    top: -6,
+    right: -6,
+    backgroundColor: "#ef4444",
+    borderRadius: 10,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    zIndex: 10,
+    minWidth: 36,
+    alignItems: "center",
+  },
+  disconnectBadgeText: {
+    color: "#ffffff",
+    fontSize: 10,
+    fontWeight: "bold",
   },
   card: {
     backgroundColor: "#ffffff",
@@ -181,10 +199,5 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "bold",
     color: "#1f2937",
-  },
-  disconnectText: {
-    fontSize: 10,
-    color: "#ef4444",
-    marginBottom: 4,
   },
 });

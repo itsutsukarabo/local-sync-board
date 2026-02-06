@@ -131,12 +131,13 @@ export interface GameTemplate {
 
 /**
  * 変数定義
- * 例: { key: "score", label: "点数", initial: 25000 }
+ * 例: { key: "score", label: "点数", initial: 25000, quickAmounts: [8000, 12000] }
  */
 export interface Variable {
   key: string;
   label: string;
   initial: number;
+  quickAmounts?: number[]; // クイック選択ボタンの金額リスト（将来的に部屋ごとにカスタマイズ可能）
 }
 
 /**
