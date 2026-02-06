@@ -1,4 +1,10 @@
-import React, { createContext, useState, useEffect, useMemo } from "react";
+import React, {
+  createContext,
+  useState,
+  useEffect,
+  useMemo,
+  useRef,
+} from "react";
 import { supabase } from "../lib/supabase";
 import {
   User,
@@ -25,6 +31,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [session, setSession] = useState<AuthSession | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // デバッグ用: 経過時間付きログ
+  const mountTimeRef = useRef(Date.now());
+  const dbg = (msg: string, ...args: unknown[]) =>
+    console.log(`[AuthContext +${Date.now() - mountTimeRef.current}ms]`, msg, ...args);
 
   /**
    * プロファイルをSupabaseから取得
@@ -87,8 +98,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       ]);
 
     const initializeAuth = async () => {
+      dbg("initializeAuth START");
       try {
         // 既存のセッションを確認（タイムアウト付き）
+        dbg("getSession START");
         const {
           data: { session: currentSession },
         } = await withTimeout(
@@ -96,10 +109,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           AUTH_TIMEOUT_MS,
           "セッション取得"
         );
+        dbg("getSession END, hasSession:", !!currentSession, "hasUser:", !!currentSession?.user);
 
         if (!mounted) return;
 
         if (currentSession?.user) {
+          dbg("setUser/setSession from getSession");
           setSession(currentSession);
           setUser(currentSession.user);
 
@@ -110,11 +125,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
         } else {
           // セッションがない場合は匿名ログインを実行（タイムアウト付き）
+          dbg("signInAnonymously START");
           const { data, error } = await withTimeout(
             supabase.auth.signInAnonymously(),
             AUTH_TIMEOUT_MS,
             "匿名ログイン"
           );
+          dbg("signInAnonymously END, hasUser:", !!data?.user, "hasError:", !!error);
 
           if (error) throw error;
           if (!mounted) return;
@@ -131,8 +148,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
         }
       } catch (error) {
+        dbg("initializeAuth CATCH:", error);
         console.error("認証初期化エラー:", error);
       } finally {
+        dbg("initializeAuth FINALLY → setLoading(false)");
         if (mounted) {
           setLoading(false);
         }
@@ -141,10 +160,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     initializeAuth();
 
+    dbg("initializeAuth called (async), setting up onAuthStateChange");
+
     // 認証状態の変更を監視
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, currentSession) => {
+    } = supabase.auth.onAuthStateChange(async (event, currentSession) => {
+      dbg("onAuthStateChange fired, event:", event, "hasSession:", !!currentSession, "hasUser:", !!currentSession?.user);
       if (!mounted) return;
 
       setSession(currentSession);
@@ -161,6 +183,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
 
     return () => {
+      dbg("cleanup: unsubscribing");
       mounted = false;
       subscription.unsubscribe();
     };
