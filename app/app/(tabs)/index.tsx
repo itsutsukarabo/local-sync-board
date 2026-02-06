@@ -17,12 +17,16 @@ import {
   removeRecentRoom,
 } from "../../lib/recentRooms";
 import RecentRooms from "../../components/home/RecentRooms";
+import EditNameModal from "../../components/home/EditNameModal";
+import { useAuth } from "../../hooks/useAuth";
 import { RecentRoom } from "../../types";
 
 export default function HomeScreen() {
   const router = useRouter();
+  const { profile, updateProfile } = useAuth();
   const [recentRooms, setRecentRooms] = useState<RecentRoom[]>([]);
   const [rejoinLoading, setRejoinLoading] = useState(false);
+  const [editNameVisible, setEditNameVisible] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -32,6 +36,10 @@ export default function HomeScreen() {
       })();
     }, [])
   );
+
+  const handleSaveName = async (newName: string) => {
+    await updateProfile({ display_name: newName });
+  };
 
   const handleRejoin = async (roomId: string) => {
     setRejoinLoading(true);
@@ -69,6 +77,17 @@ export default function HomeScreen() {
           <Text style={styles.subtitle}>リアルタイム共有ボードアプリ</Text>
         </View>
 
+        {/* ユーザー名 */}
+        <TouchableOpacity
+          style={styles.profileContainer}
+          onPress={() => setEditNameVisible(true)}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.profileIcon}>👤</Text>
+          <Text style={styles.profileName}>{profile?.display_name ?? "---"}</Text>
+          <Text style={styles.profileEdit}>✏️</Text>
+        </TouchableOpacity>
+
         {/* ボタンコンテナ */}
         <View style={styles.buttonContainer}>
           {/* 部屋を作るボタン */}
@@ -104,6 +123,14 @@ export default function HomeScreen() {
           <Text style={styles.footerText}>Version 1.0.0</Text>
         </View>
       </View>
+
+      {/* ニックネーム編集モーダル */}
+      <EditNameModal
+        visible={editNameVisible}
+        currentName={profile?.display_name ?? ""}
+        onClose={() => setEditNameVisible(false)}
+        onSave={handleSaveName}
+      />
     </SafeAreaView>
   );
 }
@@ -134,6 +161,29 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: "#6b7280",
     textAlign: "center",
+  },
+  profileContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#f3f4f6",
+    borderRadius: 20,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    marginBottom: 32,
+  },
+  profileIcon: {
+    fontSize: 16,
+    marginRight: 8,
+  },
+  profileName: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#374151",
+  },
+  profileEdit: {
+    fontSize: 14,
+    marginLeft: 8,
+    opacity: 0.6,
   },
   buttonContainer: {
     width: "100%",
