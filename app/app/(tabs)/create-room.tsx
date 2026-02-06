@@ -11,6 +11,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { createRoom } from "../../lib/roomApi";
+import { saveRecentRoom } from "../../lib/recentRooms";
 import {
   TEMPLATE_PRESETS,
   TEMPLATE_LABELS,
@@ -48,6 +49,13 @@ export default function CreateRoomScreen() {
         Alert.alert("エラー", "ルームの作成に失敗しました");
         return;
       }
+
+      await saveRecentRoom({
+        roomId: room.id,
+        roomCode: room.room_code,
+        joinedAt: Date.now(),
+        templateName: TEMPLATE_LABELS[selectedTemplate] || selectedTemplate,
+      });
 
       // ゲーム画面に遷移
       router.push(`/game/${room.id}`);

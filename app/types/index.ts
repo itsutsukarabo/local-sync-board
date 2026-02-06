@@ -197,6 +197,16 @@ export type GameState = {
 };
 
 /** プレイヤー接続状態（クライアントサイド管理、DBには保存しない） */
+/**
+ * 最近参加した部屋の履歴（AsyncStorage保存用）
+ */
+export interface RecentRoom {
+  roomId: string;
+  roomCode: string;
+  joinedAt: number; // Date.now()
+  templateName: string; // "麻雀" etc.
+}
+
 export interface ConnectionStatus {
   userId: string;
   isConnected: boolean;

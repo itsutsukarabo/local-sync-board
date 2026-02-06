@@ -13,6 +13,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { joinRoom } from "../../lib/roomApi";
+import { saveRecentRoom } from "../../lib/recentRooms";
 
 export default function JoinRoomScreen() {
   const router = useRouter();
@@ -47,6 +48,16 @@ export default function JoinRoomScreen() {
         Alert.alert("エラー", "ルームが見つかりませんでした");
         return;
       }
+
+      await saveRecentRoom({
+        roomId: room.id,
+        roomCode: room.room_code,
+        joinedAt: Date.now(),
+        templateName:
+          room.template?.layoutMode === "mahjong"
+            ? "麻雀"
+            : "シンプルスコア",
+      });
 
       // ゲーム画面に遷移
       router.push(`/game/${room.id}`);

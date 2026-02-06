@@ -1,10 +1,64 @@
-import React from "react";
-import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
+import React, { useCallback, useState } from "react";
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  Alert,
+  ActivityIndicator,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
+import { useFocusEffect } from "@react-navigation/native";
+import { supabase } from "../../lib/supabase";
+import {
+  loadRecentRooms,
+  filterRecentRooms,
+  removeRecentRoom,
+} from "../../lib/recentRooms";
+import RecentRooms from "../../components/home/RecentRooms";
+import { RecentRoom } from "../../types";
 
 export default function HomeScreen() {
   const router = useRouter();
+  const [recentRooms, setRecentRooms] = useState<RecentRoom[]>([]);
+  const [rejoinLoading, setRejoinLoading] = useState(false);
+
+  useFocusEffect(
+    useCallback(() => {
+      (async () => {
+        const all = await loadRecentRooms();
+        setRecentRooms(filterRecentRooms(all));
+      })();
+    }, [])
+  );
+
+  const handleRejoin = async (roomId: string) => {
+    setRejoinLoading(true);
+    try {
+      const { data: room, error } = await supabase
+        .from("rooms")
+        .select("id, status")
+        .eq("id", roomId)
+        .single();
+
+      if (error || !room || room.status === "finished") {
+        await removeRecentRoom(roomId);
+        setRecentRooms((prev) => prev.filter((r) => r.roomId !== roomId));
+        Alert.alert(
+          "部屋が見つかりません",
+          "この部屋は終了済みか、削除されています。"
+        );
+        return;
+      }
+
+      router.push(`/game/${roomId}`);
+    } catch {
+      Alert.alert("エラー", "部屋の確認に失敗しました");
+    } finally {
+      setRejoinLoading(false);
+    }
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -37,6 +91,13 @@ export default function HomeScreen() {
             <Text style={styles.secondaryButtonSubtext}>Join Room</Text>
           </TouchableOpacity>
         </View>
+
+        {/* 最近の部屋 */}
+        <RecentRooms
+          rooms={recentRooms}
+          onRejoin={handleRejoin}
+          loading={rejoinLoading}
+        />
 
         {/* フッター */}
         <View style={styles.footer}>
