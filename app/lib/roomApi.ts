@@ -460,7 +460,7 @@ export async function transferScore(
 
     // 4. 履歴エントリを作成
     const displayFromName =
-      fromName || (fromId === "__pot__" ? "供託" : fromId.substring(0, 8));
+      fromName || (fromId === "__pot__" ? "供託回収" : fromId.substring(0, 8));
     const displayToName =
       toName || (toId === "__pot__" ? "供託" : toId.substring(0, 8));
 
