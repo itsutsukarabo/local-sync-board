@@ -194,7 +194,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(currentSession?.user ?? null);
 
       if (currentSession?.user) {
+        dbg("onAuthStateChange: fetching profile for user", currentSession.user.id);
         const profileData = await fetchProfileWithRetry(currentSession.user.id);
+        dbg("onAuthStateChange: profile fetched, hasProfile:", !!profileData, "displayName:", profileData?.display_name);
         if (mounted) {
           setProfile(profileData);
         }
