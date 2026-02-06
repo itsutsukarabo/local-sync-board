@@ -365,6 +365,7 @@ export default function MahjongTable({
               isCurrentUser={playerId === currentUserId}
               isHost={playerId === hostUserId}
               position={displayPosition}
+              displayName={seat.displayName}
               disconnectedAt={connectionStatuses?.get(playerId)?.disconnectedAt ?? null}
               onDragStart={handleDragStart}
               onDragUpdate={handleDragUpdate}

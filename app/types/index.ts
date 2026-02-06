@@ -58,6 +58,7 @@ export interface AuthContextType {
 export interface SeatInfo {
   userId: string | null;
   status: "active" | "inactive";
+  displayName?: string; // プレイヤーの表示名
 }
 
 /**

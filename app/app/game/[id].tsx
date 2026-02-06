@@ -276,8 +276,17 @@ export default function GameScreen() {
   ) => {
     if (!room) return;
 
+    // 履歴ログ用に表示名を取得
+    const getDisplayName = (id: string): string | undefined => {
+      if (id === "__pot__") return undefined; // 供託は名前不要（roomApi側で処理）
+      const seat = room.seats?.find((s) => s?.userId === id);
+      return seat?.displayName;
+    };
+    const fromName = getDisplayName(fromId);
+    const toName = getDisplayName(toId);
+
     try {
-      const { error } = await transferScore(room.id, fromId, toId, transfers);
+      const { error } = await transferScore(room.id, fromId, toId, transfers, fromName, toName);
 
       if (error) {
         Alert.alert("エラー", error.message);

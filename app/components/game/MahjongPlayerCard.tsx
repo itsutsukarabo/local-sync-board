@@ -12,6 +12,7 @@ interface MahjongPlayerCardProps {
   isCurrentUser: boolean;
   isHost: boolean;
   position: SeatPosition;
+  displayName?: string; // プレイヤーの表示名
   disconnectedAt?: number | null;
   onDragStart: (playerId: string, x: number, y: number) => void;
   onDragUpdate: (x: number, y: number) => void;
@@ -35,6 +36,7 @@ export default function MahjongPlayerCard({
   isCurrentUser,
   isHost,
   position,
+  displayName,
   disconnectedAt,
   onDragStart,
   onDragUpdate,
@@ -109,7 +111,7 @@ export default function MahjongPlayerCard({
           <View style={styles.header}>
             {isHost && <Text style={styles.crown}>👑</Text>}
             <Text style={styles.name} numberOfLines={1}>
-              {isCurrentUser ? "あなた" : `Player ${playerId.slice(0, 4)}`}
+              {isCurrentUser ? "あなた" : displayName || `Player ${playerId.slice(0, 4)}`}
             </Text>
           </View>
           {disconnectedAt != null && (

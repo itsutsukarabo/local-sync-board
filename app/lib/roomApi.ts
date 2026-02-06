@@ -612,6 +612,14 @@ export async function joinSeat(
       throw new Error("ユーザーが認証されていません");
     }
 
+    // プロファイルからdisplay_nameを取得
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("display_name")
+      .eq("id", user.id)
+      .single();
+    const displayName = profile?.display_name || undefined;
+
     // 座席インデックスの検証
     if (seatIndex < 0 || seatIndex > 3) {
       throw new Error("無効な座席インデックスです");
@@ -652,6 +660,7 @@ export async function joinSeat(
     seats[seatIndex] = {
       userId: user.id,
       status: "active",
+      displayName,
     };
 
     // テンプレートから初期値を設定
