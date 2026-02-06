@@ -27,6 +27,41 @@ function generateUUID(): string {
 }
 
 /**
+ * スナップショット復元時、着席中だが変数データがないプレイヤーに初期値を補完する
+ */
+function ensureSeatedPlayersHaveState(
+  restoredState: GameStateSnapshot,
+  seats: (SeatInfo | null)[],
+  template: GameTemplate,
+  currentState?: Record<string, any>
+): GameStateSnapshot {
+  const result = { ...restoredState };
+
+  // 1. 着席中プレイヤーの補完（既存ロジック）
+  for (const seat of seats) {
+    if (seat?.userId && !result[seat.userId]) {
+      const initialState: Record<string, number> = {};
+      for (const v of template.variables) {
+        initialState[v.key] = v.initial;
+      }
+      result[seat.userId] = initialState;
+    }
+  }
+
+  // 2. 復元前に current_state にいたプレイヤーの補完（離席者のデータを保持）
+  if (currentState) {
+    for (const key of Object.keys(currentState)) {
+      if (key.startsWith("__")) continue;
+      if (!result[key]) {
+        result[key] = currentState[key];
+      }
+    }
+  }
+
+  return result;
+}
+
+/**
  * 履歴を除いたスナップショットを作成（ディープコピー）
  */
 function createSnapshot(currentState: any): GameStateSnapshot {
@@ -751,7 +786,7 @@ export async function rollbackTo(
     // 1. 最新のルーム情報を取得
     const { data: room, error: fetchError } = await supabase
       .from("rooms")
-      .select("current_state")
+      .select("current_state, template, seats")
       .eq("id", roomId)
       .single();
 
@@ -776,7 +811,13 @@ export async function rollbackTo(
     // 3. 見つかった要素のsnapshotを展開
     const targetEntry = history[targetIndex];
 
-    const restoredState = { ...targetEntry.snapshot };
+    // 着席中プレイヤーの変数データを補完（離席者のデータも保持）
+    const restoredState = ensureSeatedPlayersHaveState(
+      { ...targetEntry.snapshot },
+      room.seats ?? [],
+      room.template,
+      currentState
+    );
 
     // 4. ロールバック地点より「未来」の履歴を削除（targetIndexまで残す）
     const truncatedHistory = history.slice(0, targetIndex);
@@ -1096,7 +1137,7 @@ export async function undoLast(
     // 1. 最新のルーム情報を取得
     const { data: room, error: fetchError } = await supabase
       .from("rooms")
-      .select("current_state")
+      .select("current_state, template, seats")
       .eq("id", roomId)
       .single();
 
@@ -1118,8 +1159,13 @@ export async function undoLast(
     // 2. 最後の履歴エントリを取得
     const lastEntry = history[history.length - 1];
 
-    // 3. 最後のエントリのsnapshotを復元
-    const restoredState = { ...lastEntry.snapshot };
+    // 3. 最後のエントリのsnapshotを復元（着席中プレイヤー・離席者の変数データを補完）
+    const restoredState = ensureSeatedPlayersHaveState(
+      { ...lastEntry.snapshot },
+      room.seats ?? [],
+      room.template,
+      currentState
+    );
 
     // 4. 最後の履歴を削除
     const truncatedHistory = history.slice(0, -1);
