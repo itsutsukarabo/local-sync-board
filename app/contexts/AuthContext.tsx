@@ -79,10 +79,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   /**
    * 初期化：セッションの確認と復元
+   *
+   * 注意: getSession() はトークン更新時にPromiseが解決されないバグがあるため、
+   * onAuthStateChange で取得したセッションをフォールバックとして使用する。
    */
   useEffect(() => {
     let mounted = true;
     const AUTH_TIMEOUT_MS = 10000;
+
+    // onAuthStateChange で取得したセッションを記録（getSession タイムアウト時のフォールバック用）
+    let authStateSession: AuthSession | null = null;
+    let authStateResolved = false;
 
     /** タイムアウト付きPromiseラッパー */
     const withTimeout = <T,>(
@@ -149,7 +156,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       } catch (error) {
         dbg("initializeAuth CATCH:", error);
-        console.error("認証初期化エラー:", error);
+
+        // getSession タイムアウト時、onAuthStateChange で既にセッションが取得されていればOK
+        if (authStateResolved && authStateSession?.user) {
+          dbg("Fallback: using session from onAuthStateChange");
+          // onAuthStateChange で既に setUser/setSession/setProfile が呼ばれているので、
+          // ここでは何もしない（正常終了扱い）
+        } else {
+          // 本当にセッションがない場合のみエラーログ
+          console.error("認証初期化エラー:", error);
+        }
       } finally {
         dbg("initializeAuth FINALLY → setLoading(false)");
         if (mounted) {
@@ -167,6 +183,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, currentSession) => {
       dbg("onAuthStateChange fired, event:", event, "hasSession:", !!currentSession, "hasUser:", !!currentSession?.user);
+
+      // getSession タイムアウト時のフォールバック用に記録
+      authStateSession = currentSession;
+      authStateResolved = true;
+
       if (!mounted) return;
 
       setSession(currentSession);
