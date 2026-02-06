@@ -12,10 +12,20 @@ interface MahjongPlayerCardProps {
   isCurrentUser: boolean;
   isHost: boolean;
   position: SeatPosition;
+  disconnectedAt?: number | null;
   onDragStart: (playerId: string, x: number, y: number) => void;
   onDragUpdate: (x: number, y: number) => void;
   onDragEnd: (x: number, y: number) => void;
   onPositionMeasured?: (playerId: string, x: number, y: number) => void;
+}
+
+function formatDisconnectDuration(disconnectedAt: number): string {
+  const elapsed = Math.floor((Date.now() - disconnectedAt) / 1000);
+  const minutes = Math.floor(elapsed / 60);
+  const seconds = elapsed % 60;
+  if (minutes > 0)
+    return `切断中 ${minutes}分${seconds.toString().padStart(2, "0")}秒`;
+  return `切断中 ${seconds}秒`;
 }
 
 export default function MahjongPlayerCard({
@@ -25,6 +35,7 @@ export default function MahjongPlayerCard({
   isCurrentUser,
   isHost,
   position,
+  disconnectedAt,
   onDragStart,
   onDragUpdate,
   onDragEnd,
@@ -101,6 +112,11 @@ export default function MahjongPlayerCard({
               {isCurrentUser ? "あなた" : `Player ${playerId.slice(0, 4)}`}
             </Text>
           </View>
+          {disconnectedAt != null && (
+            <Text style={styles.disconnectText}>
+              {formatDisconnectDuration(disconnectedAt)}
+            </Text>
+          )}
           {variables.map((variable) => {
             const value = playerState[variable.key];
             if (typeof value !== "number") return null;
@@ -163,5 +179,10 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "bold",
     color: "#1f2937",
+  },
+  disconnectText: {
+    fontSize: 10,
+    color: "#ef4444",
+    marginBottom: 4,
   },
 });

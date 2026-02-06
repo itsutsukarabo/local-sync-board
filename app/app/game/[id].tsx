@@ -17,6 +17,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useRoomRealtime } from "../../hooks/useRoomRealtime";
+import { useConnectionMonitor } from "../../hooks/useConnectionMonitor";
 import { useAuth } from "../../hooks/useAuth";
 import PlayerList from "../../components/game/PlayerList";
 import MahjongTable from "../../components/game/MahjongTable";
@@ -40,6 +41,11 @@ export default function GameScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { user } = useAuth();
   const { room, loading, error, refetch } = useRoomRealtime(id);
+  const { connectionStatuses } = useConnectionMonitor(
+    id ?? null,
+    user?.id ?? null,
+    room?.seats ?? [null, null, null, null],
+  );
 
   console.log("[GameScreen render]", { id, loading, hasRoom: !!room, hasError: !!error, hasUser: !!user });
 
@@ -463,6 +469,7 @@ export default function GameScreen() {
               onJoinSeat={handleJoinSeat}
               isPotEnabled={isPotEnabled}
               potActions={room.template.potActions || []}
+              connectionStatuses={connectionStatuses}
             />
           </View>
 

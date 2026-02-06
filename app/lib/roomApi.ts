@@ -11,6 +11,7 @@ import {
   JoinRoomRequest,
   HistoryEntry,
   GameStateSnapshot,
+  SeatInfo,
 } from "../types";
 import { generateRoomCode } from "../utils/roomUtils";
 
@@ -1145,6 +1146,64 @@ export async function undoLast(
     return {
       error:
         error instanceof Error ? error : new Error("取り消しに失敗しました"),
+    };
+  }
+}
+
+/**
+ * 指定ユーザーを座席から強制離席（タイムアウト用）
+ * 冪等: 既に離席済みならno-op
+ * @param roomId - ルームID
+ * @param targetUserId - 強制離席させるユーザーID
+ */
+export async function forceLeaveSeat(
+  roomId: string,
+  targetUserId: string
+): Promise<{ error: Error | null }> {
+  try {
+    const { data: room, error: fetchError } = await supabase
+      .from("rooms")
+      .select("seats")
+      .eq("id", roomId)
+      .single();
+
+    if (fetchError) {
+      throw fetchError;
+    }
+
+    if (!room) {
+      throw new Error("ルームが見つかりません");
+    }
+
+    const seats: (SeatInfo | null)[] = room.seats || [null, null, null, null];
+    const seatIndex = seats.findIndex(
+      (seat) => seat && seat.userId === targetUserId
+    );
+
+    // 既に離席済みなら正常終了（冪等）
+    if (seatIndex === -1) {
+      return { error: null };
+    }
+
+    seats[seatIndex] = null;
+
+    const { error: updateError } = await supabase
+      .from("rooms")
+      .update({ seats })
+      .eq("id", roomId);
+
+    if (updateError) {
+      throw updateError;
+    }
+
+    return { error: null };
+  } catch (error) {
+    console.error("Error force leaving seat:", error);
+    return {
+      error:
+        error instanceof Error
+          ? error
+          : new Error("強制離席に失敗しました"),
     };
   }
 }

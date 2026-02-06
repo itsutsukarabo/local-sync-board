@@ -195,6 +195,13 @@ export type GameState = {
   [userId: string]: PlayerState; // プレイヤー
 };
 
+/** プレイヤー接続状態（クライアントサイド管理、DBには保存しない） */
+export interface ConnectionStatus {
+  userId: string;
+  isConnected: boolean;
+  disconnectedAt: number | null; // Date.now() のタイムスタンプ
+}
+
 /**
  * プレイヤーの座席位置
  */

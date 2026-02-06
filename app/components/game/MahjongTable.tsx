@@ -9,6 +9,7 @@ import {
   PotState,
   SeatInfo,
   SeatPosition,
+  ConnectionStatus,
 } from "../../types";
 import {
   createSeatMapFromSeats,
@@ -33,6 +34,7 @@ interface MahjongTableProps {
   onJoinSeat: (seatIndex: number) => Promise<void>; // 座席に着席
   isPotEnabled?: boolean;
   potActions?: PotAction[];
+  connectionStatuses?: Map<string, ConnectionStatus>;
 }
 
 interface DragState {
@@ -54,6 +56,7 @@ export default function MahjongTable({
   onJoinSeat,
   isPotEnabled = true,
   potActions = [],
+  connectionStatuses,
 }: MahjongTableProps) {
   const containerRef = React.useRef<View>(null);
   const [containerOffset, setContainerOffset] = React.useState({ x: 0, y: 0 });
@@ -362,6 +365,7 @@ export default function MahjongTable({
               isCurrentUser={playerId === currentUserId}
               isHost={playerId === hostUserId}
               position={displayPosition}
+              disconnectedAt={connectionStatuses?.get(playerId)?.disconnectedAt ?? null}
               onDragStart={handleDragStart}
               onDragUpdate={handleDragUpdate}
               onDragEnd={handleDragEnd}
