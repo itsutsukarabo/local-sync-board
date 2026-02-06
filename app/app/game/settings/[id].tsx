@@ -12,6 +12,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Alert,
+  TextInput,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -19,6 +20,7 @@ import { useRoomRealtime } from "../../../hooks/useRoomRealtime";
 import { useAuth } from "../../../hooks/useAuth";
 import { updateTemplate } from "../../../lib/roomApi";
 import { Variable, PotAction } from "../../../types";
+import { DEFAULT_FORCE_LEAVE_TIMEOUT_SEC } from "../../../constants/connection";
 import VariableEditor from "../../../components/settings/VariableEditor";
 import PotActionEditor from "../../../components/settings/PotActionEditor";
 import PlayerScoreEditor from "../../../components/settings/PlayerScoreEditor";
@@ -95,6 +97,9 @@ function SettingsContent({
   const [editPotActions, setEditPotActions] = useState<PotAction[]>(
     room.template.potActions || []
   );
+  const [editForceLeaveTimeout, setEditForceLeaveTimeout] = useState<string>(
+    String(room.template.forceLeaveTimeoutSec ?? DEFAULT_FORCE_LEAVE_TIMEOUT_SEC)
+  );
   const [saving, setSaving] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
 
@@ -102,6 +107,9 @@ function SettingsContent({
   useEffect(() => {
     setEditVariables(room.template.variables);
     setEditPotActions(room.template.potActions || []);
+    setEditForceLeaveTimeout(
+      String(room.template.forceLeaveTimeoutSec ?? DEFAULT_FORCE_LEAVE_TIMEOUT_SEC)
+    );
     setHasChanges(false);
   }, [room.template]);
 
@@ -116,11 +124,17 @@ function SettingsContent({
   }, []);
 
   const handleSave = async () => {
+    const parsedTimeout = parseInt(editForceLeaveTimeout, 10);
+    if (isNaN(parsedTimeout) || parsedTimeout < 60) {
+      Alert.alert("エラー", "強制離席時間は60秒以上の値を入力してください");
+      return;
+    }
     setSaving(true);
     try {
       const { error } = await updateTemplate(room.id, {
         variables: editVariables,
         potActions: editPotActions,
+        forceLeaveTimeoutSec: parsedTimeout,
       });
       if (error) {
         Alert.alert("エラー", error.message);
@@ -206,6 +220,40 @@ function SettingsContent({
             variables={room.template.variables}
             currentUserId={user?.id}
           />
+        </View>
+
+        {/* 接続設定セクション */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>接続設定</Text>
+          <Text style={styles.sectionDescription}>
+            切断検知後、指定時間経過で自動的に座席から離席されます
+          </Text>
+          <View style={styles.timeoutRow}>
+            <Text style={styles.timeoutLabel}>強制離席時間</Text>
+            <View style={styles.timeoutInputRow}>
+              <TextInput
+                style={styles.timeoutInput}
+                value={editForceLeaveTimeout}
+                onChangeText={(text) => {
+                  setEditForceLeaveTimeout(text.replace(/[^0-9]/g, ""));
+                  setHasChanges(true);
+                }}
+                keyboardType="number-pad"
+                maxLength={5}
+              />
+              <Text style={styles.timeoutUnit}>秒</Text>
+            </View>
+          </View>
+          <Text style={styles.timeoutHint}>
+            {(() => {
+              const sec = parseInt(editForceLeaveTimeout, 10);
+              if (isNaN(sec)) return "数値を入力してください";
+              if (sec < 60) return "60秒以上を指定してください";
+              const m = Math.floor(sec / 60);
+              const s = sec % 60;
+              return `= ${m}分${s > 0 ? `${s}秒` : ""}`;
+            })()}
+          </Text>
         </View>
 
         {/* リセットセクション */}
@@ -346,5 +394,43 @@ const styles = StyleSheet.create({
     color: "#9ca3af",
     textAlign: "center",
     paddingVertical: 12,
+  },
+  timeoutRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 8,
+  },
+  timeoutLabel: {
+    fontSize: 15,
+    fontWeight: "500",
+    color: "#374151",
+  },
+  timeoutInputRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  timeoutInput: {
+    borderWidth: 1,
+    borderColor: "#d1d5db",
+    borderRadius: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    fontSize: 15,
+    color: "#1f2937",
+    width: 80,
+    textAlign: "right",
+    backgroundColor: "#ffffff",
+  },
+  timeoutUnit: {
+    fontSize: 14,
+    color: "#6b7280",
+    marginLeft: 6,
+  },
+  timeoutHint: {
+    fontSize: 12,
+    color: "#9ca3af",
+    marginTop: 4,
+    textAlign: "right",
   },
 });

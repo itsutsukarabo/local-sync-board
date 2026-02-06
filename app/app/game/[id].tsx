@@ -45,6 +45,7 @@ export default function GameScreen() {
     id ?? null,
     user?.id ?? null,
     room?.seats ?? [null, null, null, null],
+    room?.template?.forceLeaveTimeoutSec,
   );
 
   console.log("[GameScreen render]", { id, loading, hasRoom: !!room, hasError: !!error, hasUser: !!user });

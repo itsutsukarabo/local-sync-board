@@ -8,10 +8,11 @@ import { AppState } from "react-native";
 import { supabase } from "../lib/supabase";
 import { forceLeaveSeat } from "../lib/roomApi";
 import { ConnectionStatus, SeatInfo } from "../types";
-
-const HEARTBEAT_INTERVAL = 30_000; // 30秒
-const GRACE_PERIOD = 60_000; // 60秒猶予
-const FORCE_LEAVE_TIMEOUT = 10 * 60_000; // 10分
+import {
+  HEARTBEAT_INTERVAL_MS,
+  GRACE_PERIOD_MS,
+  DEFAULT_FORCE_LEAVE_TIMEOUT_SEC,
+} from "../constants/connection";
 
 interface UseConnectionMonitorResult {
   connectionStatuses: Map<string, ConnectionStatus>;
@@ -20,8 +21,11 @@ interface UseConnectionMonitorResult {
 export function useConnectionMonitor(
   roomId: string | null,
   userId: string | null,
-  seats: (SeatInfo | null)[]
+  seats: (SeatInfo | null)[],
+  forceLeaveTimeoutSec?: number,
 ): UseConnectionMonitorResult {
+  const forceLeaveMs =
+    (forceLeaveTimeoutSec ?? DEFAULT_FORCE_LEAVE_TIMEOUT_SEC) * 1000;
   const [connectionStatuses, setConnectionStatuses] = useState<
     Map<string, ConnectionStatus>
   >(new Map());
@@ -107,10 +111,10 @@ export function useConnectionMonitor(
       const timer = setTimeout(() => {
         forceLeaveTimersRef.current.delete(targetUserId);
         forceLeaveSeat(currentRoomId, targetUserId);
-      }, FORCE_LEAVE_TIMEOUT);
+      }, forceLeaveMs);
       forceLeaveTimersRef.current.set(targetUserId, timer);
     },
-    [clearForceLeaveTimer]
+    [clearForceLeaveTimer, forceLeaveMs]
   );
 
   // 60秒猶予タイマー開始
@@ -121,7 +125,7 @@ export function useConnectionMonitor(
         graceTimersRef.current.delete(targetUserId);
         // 猶予切れ → 切断中に設定
         markDisconnected(targetUserId, currentRoomId);
-      }, GRACE_PERIOD);
+      }, GRACE_PERIOD_MS);
       graceTimersRef.current.set(targetUserId, timer);
     },
     [clearGraceTimer, markDisconnected]
@@ -194,7 +198,7 @@ export function useConnectionMonitor(
       });
       // 表示更新トリガー（切断中テキストの経過時間更新）
       setConnectionStatuses(new Map(statusesRef.current));
-    }, HEARTBEAT_INTERVAL);
+    }, HEARTBEAT_INTERVAL_MS);
 
     // AppState連携: アプリ復帰時にtrack再呼び出し
     const appStateSubscription = AppState.addEventListener(
@@ -236,7 +240,7 @@ export function useConnectionMonitor(
       statusesRef.current.clear();
       setConnectionStatuses(new Map());
     };
-  }, [roomId, userId]);
+  }, [roomId, userId, forceLeaveMs]);
 
   // seats配列を安定したキーにシリアライズ（参照変更による無限ループ防止）
   const seatsKey = useMemo(

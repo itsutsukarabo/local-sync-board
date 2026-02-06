@@ -125,6 +125,7 @@ export interface GameTemplate {
   maxPlayers?: number; // 最大プレイヤー数（麻雀モードでは4）
   potEnabled?: boolean; // 供託金機能の有効化
   potActions?: PotAction[]; // Pot操作の定義リスト
+  forceLeaveTimeoutSec?: number; // 切断後の強制離席までの秒数
 }
 
 /**
