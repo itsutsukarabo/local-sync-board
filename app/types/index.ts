@@ -115,6 +115,17 @@ export interface PotAction {
 }
 
 /**
+ * 精算設定
+ */
+export interface SettlementConfig {
+  divider: number; // 割る数（デフォルト: 1000）
+  rankBonuses: {
+    3: number[]; // 3人時の順位点 [1位, 2位, 3位]
+    4: number[]; // 4人時の順位点 [1位, 2位, 3位, 4位]
+  };
+}
+
+/**
  * ゲームテンプレート定義（拡張版）
  * ゲームのルール（変数と権限）を定義
  */
@@ -127,6 +138,7 @@ export interface GameTemplate {
   potEnabled?: boolean; // 供託金機能の有効化
   potActions?: PotAction[]; // Pot操作の定義リスト
   forceLeaveTimeoutSec?: number; // 切断後の強制離席までの秒数
+  settlementConfig?: SettlementConfig; // 精算設定
 }
 
 /**
@@ -155,6 +167,31 @@ export interface Action {
  */
 export interface PotState {
   [variableKey: string]: number;
+}
+
+/**
+ * 精算結果（プレイヤーごと）
+ */
+export interface SettlementPlayerResult {
+  displayName: string;
+  finalScore: number; // 精算前の最終スコア
+  rank: number; // 順位（1〜4）
+  rankBonus: number; // 順位点（+10000, -20000等）
+  adjustedScore: number; // 順位点適用後のスコア
+  divided: number; // 1000で割った値（端数調整前、小数点第一位まで）
+  result: number; // 最終結果（端数調整後、表に表示される値、小数点第一位まで）
+}
+
+/**
+ * 精算結果
+ */
+export interface Settlement {
+  id: string; // UUID
+  timestamp: number; // Unix timestamp (ms)
+  type: "settlement" | "adjustment"; // 精算 or 調整行
+  playerResults: {
+    [userId: string]: SettlementPlayerResult;
+  };
 }
 
 /**
@@ -189,11 +226,12 @@ export interface HistoryEntry {
 /**
  * ゲーム状態（拡張版）
  * 全プレイヤーの現在の値を保持
- * 注意: "__pot__", "__history__"は予約キーとして使用
+ * 注意: "__pot__", "__history__", "__settlements__"は予約キーとして使用
  */
 export type GameState = {
   __pot__?: PotState; // 供託金エリア（予約キー）
   __history__?: HistoryEntry[]; // 履歴配列（時系列順）
+  __settlements__?: Settlement[]; // 精算履歴配列（時系列順）
 } & {
   [userId: string]: PlayerState; // プレイヤー
 };

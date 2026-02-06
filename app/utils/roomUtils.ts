@@ -66,6 +66,13 @@ export const DEFAULT_MAHJONG_TEMPLATE: GameTemplate = {
     "edit_template",
   ],
   playerPermissions: ["transfer_score", "retrieve_pot"],
+  settlementConfig: {
+    divider: 1000,
+    rankBonuses: {
+      3: [5000, -40000, -70000],
+      4: [10000, -20000, -40000, -50000],
+    },
+  },
 };
 
 /**
