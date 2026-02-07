@@ -19,10 +19,11 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useRoomRealtime } from "../../../hooks/useRoomRealtime";
 import { useAuth } from "../../../hooks/useAuth";
 import { updateTemplate } from "../../../lib/roomApi";
-import { Variable, PotAction } from "../../../types";
+import { Variable, PotAction, SettlementConfig } from "../../../types";
 import { DEFAULT_FORCE_LEAVE_TIMEOUT_SEC } from "../../../constants/connection";
 import VariableEditor from "../../../components/settings/VariableEditor";
 import PotActionEditor from "../../../components/settings/PotActionEditor";
+import SettlementConfigEditor from "../../../components/settings/SettlementConfigEditor";
 import PlayerScoreEditor from "../../../components/settings/PlayerScoreEditor";
 import ResetSection from "../../../components/settings/ResetSection";
 
@@ -97,6 +98,9 @@ function SettingsContent({
   const [editPotActions, setEditPotActions] = useState<PotAction[]>(
     room.template.potActions || []
   );
+  const [editSettlementConfig, setEditSettlementConfig] = useState<SettlementConfig | undefined>(
+    room.template.settlementConfig
+  );
   const [editForceLeaveTimeout, setEditForceLeaveTimeout] = useState<string>(
     String(room.template.forceLeaveTimeoutSec ?? DEFAULT_FORCE_LEAVE_TIMEOUT_SEC)
   );
@@ -107,6 +111,7 @@ function SettingsContent({
   useEffect(() => {
     setEditVariables(room.template.variables);
     setEditPotActions(room.template.potActions || []);
+    setEditSettlementConfig(room.template.settlementConfig);
     setEditForceLeaveTimeout(
       String(room.template.forceLeaveTimeoutSec ?? DEFAULT_FORCE_LEAVE_TIMEOUT_SEC)
     );
@@ -123,6 +128,11 @@ function SettingsContent({
     setHasChanges(true);
   }, []);
 
+  const handleSettlementConfigUpdate = useCallback((config: SettlementConfig) => {
+    setEditSettlementConfig(config);
+    setHasChanges(true);
+  }, []);
+
   const handleSave = async () => {
     const parsedTimeout = parseInt(editForceLeaveTimeout, 10);
     if (isNaN(parsedTimeout) || parsedTimeout < 60) {
@@ -134,6 +144,7 @@ function SettingsContent({
       const { error } = await updateTemplate(room.id, {
         variables: editVariables,
         potActions: editPotActions,
+        ...(editSettlementConfig ? { settlementConfig: editSettlementConfig } : {}),
         forceLeaveTimeoutSec: parsedTimeout,
       });
       if (error) {
@@ -203,6 +214,21 @@ function SettingsContent({
               potActions={editPotActions}
               variables={editVariables}
               onUpdate={handlePotActionsUpdate}
+            />
+          </View>
+        )}
+
+        {/* 精算設定セクション */}
+        {editSettlementConfig && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>精算設定</Text>
+            <Text style={styles.sectionDescription}>
+              精算時の割る数・順位点を設定します
+            </Text>
+            <SettlementConfigEditor
+              config={editSettlementConfig}
+              onUpdate={handleSettlementConfigUpdate}
+              scoreInitial={editVariables.find((v) => v.key === "score")?.initial ?? 0}
             />
           </View>
         )}
