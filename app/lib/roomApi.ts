@@ -1315,8 +1315,8 @@ export async function joinFakeSeat(
       throw new Error("この座席は既に使用されています");
     }
 
-    // 6. 架空ユーザーIDと表示名を生成
-    const fakeUserId = `fake_${seatIndex}`;
+    // 6. 架空ユーザーIDと表示名を生成（IDは一意にする）
+    const fakeUserId = `fake_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
 
     // 使用中の名前を収集（seats + current_stateに残っているゲストの__displayName__）
     const usedNames = new Set<string>();
