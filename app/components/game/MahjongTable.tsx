@@ -107,17 +107,22 @@ export default function MahjongTable({
     y: 0,
   });
 
-  // 相対座標に変換（使用時に計算）
+  // 相対座標に変換（着席中プレイヤーのみ。離席済みの古い座標を除外）
+  const seatedUserIds = React.useMemo(
+    () => new Set(seats.filter((s) => s && s.userId).map((s) => s!.userId!)),
+    [seats]
+  );
   const cardPositions = React.useMemo(() => {
     const relative: { [key: string]: { x: number; y: number } } = {};
     for (const [id, pos] of Object.entries(cardPositionsAbsolute)) {
+      if (!seatedUserIds.has(id)) continue;
       relative[id] = {
         x: pos.x - containerOffset.x,
         y: pos.y - containerOffset.y,
       };
     }
     return relative;
-  }, [cardPositionsAbsolute, containerOffset]);
+  }, [cardPositionsAbsolute, containerOffset, seatedUserIds]);
 
   const potPosition = React.useMemo(
     () => ({

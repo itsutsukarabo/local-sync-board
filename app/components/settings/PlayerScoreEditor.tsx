@@ -129,7 +129,8 @@ export default function PlayerScoreEditor({
         const isSaving = savingPlayer === playerId;
         const changed = hasChanges(playerId);
         const seatInfo = seats.find((s) => s && s.userId === playerId);
-        const baseName = seatInfo?.displayName || `${playerId.substring(0, 8)}...`;
+        const stateDisplayName = currentState[playerId]?.__displayName__ as string | undefined;
+        const baseName = seatInfo?.displayName || stateDisplayName || `${playerId.substring(0, 8)}...`;
         const displayName = playerId === currentUserId
           ? `${baseName} (あなた)`
           : baseName;
