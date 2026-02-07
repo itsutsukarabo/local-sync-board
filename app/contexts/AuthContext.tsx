@@ -90,6 +90,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // onAuthStateChange で取得したセッションを記録（getSession タイムアウト時のフォールバック用）
     let authStateSession: AuthSession | null = null;
     let authStateResolved = false;
+    let loadingResolved = false; // loading解除済みフラグ（二重解除防止）
 
     /** タイムアウト付きPromiseラッパー */
     const withTimeout = <T,>(
@@ -167,9 +168,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           console.error("認証初期化エラー:", error);
         }
       } finally {
-        dbg("initializeAuth FINALLY → setLoading(false)");
-        if (mounted) {
+        if (mounted && !loadingResolved) {
+          loadingResolved = true;
+          dbg("initializeAuth FINALLY → setLoading(false)");
           setLoading(false);
+        } else {
+          dbg("initializeAuth FINALLY → loading already resolved");
         }
       }
     };
@@ -199,6 +203,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         dbg("onAuthStateChange: profile fetched, hasProfile:", !!profileData, "displayName:", profileData?.display_name);
         if (mounted) {
           setProfile(profileData);
+          // プロファイル取得完了 → getSessionタイムアウトを待たずにloading解除
+          if (!loadingResolved) {
+            loadingResolved = true;
+            dbg("onAuthStateChange: setLoading(false) - profile ready");
+            setLoading(false);
+          }
         }
       } else {
         setProfile(null);
