@@ -5,6 +5,7 @@ import {
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
+  ScrollView,
 } from "react-native";
 import { RecentRoom } from "../../types";
 
@@ -33,30 +34,36 @@ export default function RecentRooms({
   return (
     <View style={styles.container}>
       <Text style={styles.heading}>最近の部屋</Text>
-      {rooms.map((room) => (
-        <TouchableOpacity
-          key={room.roomId}
-          style={styles.row}
-          onPress={() => onRejoin(room.roomId)}
-          disabled={loading}
-          activeOpacity={0.7}
-        >
-          <View style={styles.codeBadge}>
-            <Text style={styles.codeText}>{room.roomCode}</Text>
-          </View>
-          <View style={styles.info}>
-            <Text style={styles.templateName}>{room.templateName}</Text>
-            <Text style={styles.time}>
-              {formatRelativeTime(room.joinedAt)}
-            </Text>
-          </View>
-          {loading ? (
-            <ActivityIndicator size="small" color="#2563eb" />
-          ) : (
-            <Text style={styles.arrow}>›</Text>
-          )}
-        </TouchableOpacity>
-      ))}
+      <ScrollView
+        style={styles.scrollView}
+        showsVerticalScrollIndicator={true}
+        nestedScrollEnabled={true}
+      >
+        {rooms.map((room) => (
+          <TouchableOpacity
+            key={room.roomId}
+            style={styles.row}
+            onPress={() => onRejoin(room.roomId)}
+            disabled={loading}
+            activeOpacity={0.7}
+          >
+            <View style={styles.codeBadge}>
+              <Text style={styles.codeText}>{room.roomCode}</Text>
+            </View>
+            <View style={styles.info}>
+              <Text style={styles.templateName}>{room.templateName}</Text>
+              <Text style={styles.time}>
+                {formatRelativeTime(room.joinedAt)}
+              </Text>
+            </View>
+            {loading ? (
+              <ActivityIndicator size="small" color="#2563eb" />
+            ) : (
+              <Text style={styles.arrow}>›</Text>
+            )}
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
     </View>
   );
 }
@@ -72,6 +79,9 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: "#6b7280",
     marginBottom: 8,
+  },
+  scrollView: {
+    maxHeight: 240,
   },
   row: {
     flexDirection: "row",
