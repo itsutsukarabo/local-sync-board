@@ -1318,13 +1318,17 @@ export async function joinFakeSeat(
     // 6. 架空ユーザーIDと表示名を生成
     const fakeUserId = `fake_${seatIndex}`;
 
-    // 使用中の名前を収集（seatsのdisplayName + current_stateに残っているゲストのID）
+    // 使用中の名前を収集（seats + current_stateに残っているゲストの__displayName__）
     const usedNames = new Set<string>();
     for (const s of seats) {
       if (s && s.displayName) usedNames.add(s.displayName);
     }
-    // current_stateに残っているゲスト（離席済み含む）の過去のdisplayNameは取れないが、
-    // 同じ名前の再利用を避けるため、seatsにあるdisplayNameのみチェック
+    const existingState = room.current_state || {};
+    for (const key of Object.keys(existingState)) {
+      if (key.startsWith("fake_") && existingState[key]?.__displayName__) {
+        usedNames.add(existingState[key].__displayName__);
+      }
+    }
 
     const nameLetters = ["A", "B", "C", "D", "E", "F", "G", "H"];
     let displayName = "プレイヤーA";
@@ -1347,11 +1351,15 @@ export async function joinFakeSeat(
     // 8. current_stateに初期値を追加
     const currentState = room.current_state || {};
     if (!currentState[fakeUserId]) {
-      const initialState: Record<string, number> = {};
+      const initialState: Record<string, any> = {};
       room.template.variables.forEach((variable: any) => {
         initialState[variable.key] = variable.initial;
       });
+      initialState.__displayName__ = displayName;
       currentState[fakeUserId] = initialState;
+    } else {
+      // 既存エントリがある場合もdisplayNameを更新
+      currentState[fakeUserId].__displayName__ = displayName;
     }
 
     // 9. 一括DB更新
@@ -1477,8 +1485,8 @@ export async function reseatFakePlayer(
       throw new Error("指定されたゲストが見つかりません");
     }
 
-    // 4. 過去のdisplayNameを探す（seats全体から。見つからなければfakeUserId）
-    const displayName = fakeUserId;
+    // 4. current_stateから保存済みのdisplayNameを取得
+    const displayName = room.current_state[fakeUserId].__displayName__ || fakeUserId;
 
     // 5. 座席に着席
     seats[seatIndex] = {

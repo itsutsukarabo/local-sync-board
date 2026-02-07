@@ -298,13 +298,11 @@ export default function GameScreen() {
 
     // 離席済みゲストがいる場合は選択UIを表示
     const buttons: any[] = unseatedFakes.map((fakeId) => {
-      // seatsから過去のdisplayNameを探す（見つからなければID）
       const playerState = room.current_state[fakeId];
       const score = playerState?.score ?? 0;
-      // 過去に座っていたときのdisplayNameはseatsからは取れないのでcurrent_stateの情報を使う
-      // seats情報にはもういないので、fakeIdから推測する
+      const guestName = playerState?.__displayName__ || fakeId;
       return {
-        text: `${fakeId} (点数: ${score.toLocaleString()})`,
+        text: `${guestName} (点数: ${score.toLocaleString()})`,
         onPress: async () => {
           try {
             const { error } = await reseatFakePlayer(room.id, fakeId, seatIndex);
