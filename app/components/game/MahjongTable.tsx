@@ -20,6 +20,7 @@ import MahjongPlayerCard from "./MahjongPlayerCard";
 import PotArea from "./PotArea";
 import PaymentModal from "./PaymentModal";
 import PotActionSelectModal from "./PotActionSelectModal";
+import PlayerInfoModal from "./PlayerInfoModal";
 import EmptySeat from "./EmptySeat";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
@@ -33,6 +34,8 @@ interface MahjongTableProps {
   onTransfer: (fromId: string, toId: string, transfers: { variable: string; amount: number }[]) => Promise<void>;
   onJoinSeat: (seatIndex: number) => Promise<void>; // 座席に着席
   onJoinFakeSeat?: (seatIndex: number) => Promise<void>; // 架空ユーザー着席（ホスト長押し）
+  onForceLeave?: (targetUserId: string) => Promise<void>; // 実ユーザー強制離席
+  onRemoveFakePlayer?: (fakeUserId: string) => Promise<void>; // 架空ユーザー削除
   isPotEnabled?: boolean;
   potActions?: PotAction[];
   connectionStatuses?: Map<string, ConnectionStatus>;
@@ -56,6 +59,8 @@ export default function MahjongTable({
   onTransfer,
   onJoinSeat,
   onJoinFakeSeat,
+  onForceLeave,
+  onRemoveFakePlayer,
   isPotEnabled = true,
   potActions = [],
   connectionStatuses,
@@ -74,6 +79,12 @@ export default function MahjongTable({
   const [potActionModal, setPotActionModal] = useState<{
     visible: boolean;
     fromId: string;
+  } | null>(null);
+
+  const [playerInfoModal, setPlayerInfoModal] = useState<{
+    visible: boolean;
+    playerId: string;
+    seatIndex: number;
   } | null>(null);
 
   const [dragState, setDragState] = useState<DragState>({
@@ -290,6 +301,21 @@ export default function MahjongTable({
     }
   };
 
+  const handleCardTap = (playerId: string) => {
+    const seatIndex = seats.findIndex((s) => s && s.userId === playerId);
+    if (seatIndex !== -1) {
+      setPlayerInfoModal({ visible: true, playerId, seatIndex });
+    }
+  };
+
+  // モーダル表示中のプレイヤー情報を取得
+  const infoModalSeat = playerInfoModal
+    ? seats[playerInfoModal.seatIndex]
+    : null;
+  const infoModalPlayerState = playerInfoModal
+    ? gameState[playerInfoModal.playerId]
+    : null;
+
   // 矢印の先端を計算
   const calculateArrowHead = (
     x1: number,
@@ -373,6 +399,7 @@ export default function MahjongTable({
               disconnectedAt={connectionStatuses?.get(playerId)?.disconnectedAt ?? null}
               isHostUser={isHost}
               isFakePlayer={seat.isFake === true}
+              onTap={handleCardTap}
               onDragStart={handleDragStart}
               onDragUpdate={handleDragUpdate}
               onDragEnd={handleDragEnd}
@@ -452,6 +479,33 @@ export default function MahjongTable({
             setPotActionModal(null);
           }}
           onClose={() => setPotActionModal(null)}
+        />
+      )}
+
+      {/* プレイヤー情報モーダル */}
+      {playerInfoModal && infoModalSeat && infoModalPlayerState && (
+        <PlayerInfoModal
+          visible={playerInfoModal.visible}
+          onClose={() => setPlayerInfoModal(null)}
+          playerId={playerInfoModal.playerId}
+          displayName={infoModalSeat.displayName || playerInfoModal.playerId.slice(0, 8)}
+          playerState={infoModalPlayerState}
+          variables={variables}
+          isFakePlayer={infoModalSeat.isFake === true}
+          isHost={isHost}
+          onForceLeave={
+            isHost
+              ? () => {
+                  const pid = playerInfoModal.playerId;
+                  const isFake = infoModalSeat.isFake === true;
+                  if (isFake) {
+                    onRemoveFakePlayer?.(pid);
+                  } else {
+                    onForceLeave?.(pid);
+                  }
+                }
+              : undefined
+          }
         />
       )}
     </GestureHandlerRootView>

@@ -1364,6 +1364,66 @@ export async function joinFakeSeat(
 }
 
 /**
+ * 架空ユーザーを座席から離席させ、current_stateからも削除（ホスト専用）
+ * @param roomId - ルームID
+ * @param fakeUserId - 架空ユーザーID（例: "fake_0"）
+ */
+export async function removeFakePlayer(
+  roomId: string,
+  fakeUserId: string
+): Promise<{ error: Error | null }> {
+  try {
+    // 1. 最新のルーム情報を取得
+    const { data: room, error: fetchError } = await supabase
+      .from("rooms")
+      .select("seats, current_state")
+      .eq("id", roomId)
+      .single();
+
+    if (fetchError) {
+      throw fetchError;
+    }
+
+    if (!room) {
+      throw new Error("ルームが見つかりません");
+    }
+
+    // 2. 座席からfakeUserIdを除去
+    const seats: (SeatInfo | null)[] = room.seats || [null, null, null, null];
+    const seatIndex = seats.findIndex(
+      (seat) => seat && seat.userId === fakeUserId
+    );
+    if (seatIndex !== -1) {
+      seats[seatIndex] = null;
+    }
+
+    // 3. current_stateからエントリを削除
+    const currentState = { ...room.current_state };
+    delete currentState[fakeUserId];
+
+    // 4. 一括DB更新
+    const { error: updateError } = await supabase
+      .from("rooms")
+      .update({ seats, current_state: currentState })
+      .eq("id", roomId);
+
+    if (updateError) {
+      throw updateError;
+    }
+
+    return { error: null };
+  } catch (error) {
+    console.error("Error removing fake player:", error);
+    return {
+      error:
+        error instanceof Error
+          ? error
+          : new Error("架空ユーザーの削除に失敗しました"),
+    };
+  }
+}
+
+/**
  * 精算結果を保存し、スコアを初期値にリセット
  * @param roomId - ルームID
  * @param settlement - 精算結果オブジェクト

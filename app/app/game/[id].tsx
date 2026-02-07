@@ -32,6 +32,8 @@ import {
   transferScore,
   joinSeat,
   joinFakeSeat,
+  removeFakePlayer,
+  forceLeaveSeat,
   leaveSeat,
   rollbackTo,
   undoLast,
@@ -352,6 +354,44 @@ export default function GameScreen() {
     }
   };
 
+  // 架空ユーザーを削除するハンドラー（ホスト操作）
+  const handleRemoveFakePlayer = async (fakeUserId: string) => {
+    if (!room) return;
+
+    try {
+      const { error } = await removeFakePlayer(room.id, fakeUserId);
+
+      if (error) {
+        Alert.alert("エラー", error.message);
+        return;
+      }
+
+      await refetch();
+    } catch (error) {
+      console.error("Error removing fake player:", error);
+      Alert.alert("エラー", "架空ユーザーの削除に失敗しました");
+    }
+  };
+
+  // 実ユーザーを強制離席させるハンドラー（ホスト操作）
+  const handleForceLeave = async (targetUserId: string) => {
+    if (!room) return;
+
+    try {
+      const { error } = await forceLeaveSeat(room.id, targetUserId);
+
+      if (error) {
+        Alert.alert("エラー", error.message);
+        return;
+      }
+
+      await refetch();
+    } catch (error) {
+      console.error("Error force leaving seat:", error);
+      Alert.alert("エラー", "強制離席に失敗しました");
+    }
+  };
+
   // 座席から離席するハンドラー
   const handleLeaveSeat = async () => {
     if (!room || !user) return;
@@ -581,6 +621,8 @@ export default function GameScreen() {
               onTransfer={handleTransfer}
               onJoinSeat={handleJoinSeat}
               onJoinFakeSeat={isHost ? handleJoinFakeSeat : undefined}
+              onForceLeave={isHost ? handleForceLeave : undefined}
+              onRemoveFakePlayer={isHost ? handleRemoveFakePlayer : undefined}
               isPotEnabled={isPotEnabled}
               potActions={room.template.potActions || []}
               connectionStatuses={connectionStatuses}

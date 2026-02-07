@@ -16,6 +16,7 @@ interface MahjongPlayerCardProps {
   disconnectedAt?: number | null;
   isHostUser?: boolean; // 現在のユーザーがホストか
   isFakePlayer?: boolean; // このカードが架空ユーザーか
+  onTap?: (playerId: string) => void;
   onDragStart: (playerId: string, x: number, y: number) => void;
   onDragUpdate: (x: number, y: number) => void;
   onDragEnd: (x: number, y: number) => void;
@@ -38,6 +39,7 @@ export default function MahjongPlayerCard({
   disconnectedAt,
   isHostUser,
   isFakePlayer,
+  onTap,
   onDragStart,
   onDragUpdate,
   onDragEnd,
@@ -84,23 +86,32 @@ export default function MahjongPlayerCard({
     }
   }, [playerId, onDragStart, cardCenterX, cardCenterY]);
 
-  const gesture = Gesture.Pan()
+  const panGesture = Gesture.Pan()
     .enabled(isCurrentUser || (isHostUser === true && isFakePlayer === true)) // 自分のカード + ホストは架空ユーザーもドラッグ可能
+    .minDistance(10) // 10px以上動いたらパン開始（タップと区別）
     .onStart((event) => {
       "worklet";
-      // ドラッグ開始時の絶対座標を使用
       runOnJS(onDragStart)(playerId, event.absoluteX, event.absoluteY);
     })
     .onUpdate((event) => {
       "worklet";
-      // ドラッグ中の絶対座標を使用
       runOnJS(onDragUpdate)(event.absoluteX, event.absoluteY);
     })
     .onEnd((event) => {
       "worklet";
-      // ドラッグ終了時の絶対座標を使用
       runOnJS(onDragEnd)(event.absoluteX, event.absoluteY);
     });
+
+  const tapGesture = Gesture.Tap()
+    .onEnd(() => {
+      "worklet";
+      if (onTap) {
+        runOnJS(onTap)(playerId);
+      }
+    });
+
+  // Pan優先: 10px以上動いたらドラッグ、動かなければタップ
+  const gesture = Gesture.Exclusive(panGesture, tapGesture);
 
   const positionStyle = getSeatStyle(position);
 
