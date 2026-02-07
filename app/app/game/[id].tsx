@@ -31,6 +31,7 @@ import {
   updateRoomStatus,
   transferScore,
   joinSeat,
+  joinFakeSeat,
   leaveSeat,
   rollbackTo,
   undoLast,
@@ -332,6 +333,25 @@ export default function GameScreen() {
     }
   };
 
+  // 架空ユーザーを座席に着席させるハンドラー（ホスト長押し）
+  const handleJoinFakeSeat = async (seatIndex: number) => {
+    if (!room || !user) return;
+
+    try {
+      const { error } = await joinFakeSeat(room.id, seatIndex);
+
+      if (error) {
+        Alert.alert("エラー", error.message);
+        return;
+      }
+
+      await refetch();
+    } catch (error) {
+      console.error("Error joining fake seat:", error);
+      Alert.alert("エラー", "架空ユーザーの作成に失敗しました");
+    }
+  };
+
   // 座席から離席するハンドラー
   const handleLeaveSeat = async () => {
     if (!room || !user) return;
@@ -560,6 +580,7 @@ export default function GameScreen() {
               seats={room.seats || [null, null, null, null]}
               onTransfer={handleTransfer}
               onJoinSeat={handleJoinSeat}
+              onJoinFakeSeat={isHost ? handleJoinFakeSeat : undefined}
               isPotEnabled={isPotEnabled}
               potActions={room.template.potActions || []}
               connectionStatuses={connectionStatuses}

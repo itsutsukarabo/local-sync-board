@@ -1265,6 +1265,105 @@ export async function forceLeaveSeat(
 }
 
 /**
+ * 架空ユーザーを座席に着席させる（ホスト専用）
+ * @param roomId - ルームID
+ * @param seatIndex - 座席インデックス (0-3)
+ */
+export async function joinFakeSeat(
+  roomId: string,
+  seatIndex: number
+): Promise<{ error: Error | null }> {
+  try {
+    // 1. 現在のユーザーを取得（ホスト確認用）
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
+
+    if (userError || !user) {
+      throw new Error("ユーザーが認証されていません");
+    }
+
+    // 2. 最新のルーム情報を取得
+    const { data: room, error: fetchError } = await supabase
+      .from("rooms")
+      .select("*")
+      .eq("id", roomId)
+      .single();
+
+    if (fetchError) {
+      throw fetchError;
+    }
+
+    if (!room) {
+      throw new Error("ルームが見つかりません");
+    }
+
+    // 3. ホスト確認
+    if (room.host_user_id !== user.id) {
+      throw new Error("ホストのみが架空ユーザーを作成できます");
+    }
+
+    // 4. 座席インデックスの検証
+    if (seatIndex < 0 || seatIndex > 3) {
+      throw new Error("無効な座席インデックスです");
+    }
+
+    // 5. 対象座席が空であることを確認
+    const seats = room.seats || [null, null, null, null];
+    if (seats[seatIndex] !== null) {
+      throw new Error("この座席は既に使用されています");
+    }
+
+    // 6. 架空ユーザーIDと表示名を生成
+    const fakeUserId = `fake_${seatIndex}`;
+    const fakeNames = ["プレイヤーA", "プレイヤーB", "プレイヤーC", "プレイヤーD"];
+    const displayName = fakeNames[seatIndex];
+
+    // 7. 座席に着席
+    seats[seatIndex] = {
+      userId: fakeUserId,
+      status: "active",
+      displayName,
+      isFake: true,
+    };
+
+    // 8. current_stateに初期値を追加
+    const currentState = room.current_state || {};
+    if (!currentState[fakeUserId]) {
+      const initialState: Record<string, number> = {};
+      room.template.variables.forEach((variable: any) => {
+        initialState[variable.key] = variable.initial;
+      });
+      currentState[fakeUserId] = initialState;
+    }
+
+    // 9. 一括DB更新
+    const { error: updateError } = await supabase
+      .from("rooms")
+      .update({
+        seats,
+        current_state: currentState,
+      })
+      .eq("id", roomId);
+
+    if (updateError) {
+      throw updateError;
+    }
+
+    return { error: null };
+  } catch (error) {
+    console.error("Error joining fake seat:", error);
+    return {
+      error:
+        error instanceof Error
+          ? error
+          : new Error("架空ユーザーの作成に失敗しました"),
+    };
+  }
+}
+
+/**
  * 精算結果を保存し、スコアを初期値にリセット
  * @param roomId - ルームID
  * @param settlement - 精算結果オブジェクト

@@ -7,12 +7,14 @@ interface EmptySeatProps {
   position: SeatPosition;
   seatIndex: number;
   onJoinSeat: (seatIndex: number) => void;
+  onLongPressJoinFake?: (seatIndex: number) => void;
 }
 
 export default function EmptySeat({
   position,
   seatIndex,
   onJoinSeat,
+  onLongPressJoinFake,
 }: EmptySeatProps) {
   const positionStyle = getSeatStyle(position);
 
@@ -21,6 +23,7 @@ export default function EmptySeat({
       <TouchableOpacity
         style={styles.button}
         onPress={() => onJoinSeat(seatIndex)}
+        onLongPress={onLongPressJoinFake ? () => onLongPressJoinFake(seatIndex) : undefined}
         activeOpacity={0.7}
       >
         <View style={styles.iconContainer}>

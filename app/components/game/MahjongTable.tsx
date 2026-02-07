@@ -32,6 +32,7 @@ interface MahjongTableProps {
   seats: (SeatInfo | null)[]; // 座席配列
   onTransfer: (fromId: string, toId: string, transfers: { variable: string; amount: number }[]) => Promise<void>;
   onJoinSeat: (seatIndex: number) => Promise<void>; // 座席に着席
+  onJoinFakeSeat?: (seatIndex: number) => Promise<void>; // 架空ユーザー着席（ホスト長押し）
   isPotEnabled?: boolean;
   potActions?: PotAction[];
   connectionStatuses?: Map<string, ConnectionStatus>;
@@ -54,6 +55,7 @@ export default function MahjongTable({
   seats,
   onTransfer,
   onJoinSeat,
+  onJoinFakeSeat,
   isPotEnabled = true,
   potActions = [],
   connectionStatuses,
@@ -124,6 +126,7 @@ export default function MahjongTable({
   const isUserSeated = seats.some(
     (seat) => seat && seat.userId === currentUserId
   );
+  const isHost = currentUserId === hostUserId;
 
   // コンテナの位置を測定（座席状態が変わったときも再測定）
   React.useEffect(() => {
@@ -329,8 +332,8 @@ export default function MahjongTable({
 
           // 座席が空の場合
           if (!seat || !seat.userId) {
-            // ユーザーが既に座席に座っている場合は空席を表示しない
-            if (isUserSeated) {
+            // ユーザーが既に座席に座っている場合は空席を表示しない（ホストは除く）
+            if (isUserSeated && !isHost) {
               return null;
             }
             return (
@@ -339,6 +342,7 @@ export default function MahjongTable({
                 position={displayPosition}
                 seatIndex={index}
                 onJoinSeat={onJoinSeat}
+                onLongPressJoinFake={isHost ? onJoinFakeSeat : undefined}
               />
             );
           }
@@ -367,6 +371,8 @@ export default function MahjongTable({
               position={displayPosition}
               displayName={seat.displayName}
               disconnectedAt={connectionStatuses?.get(playerId)?.disconnectedAt ?? null}
+              isHostUser={isHost}
+              isFakePlayer={seat.isFake === true}
               onDragStart={handleDragStart}
               onDragUpdate={handleDragUpdate}
               onDragEnd={handleDragEnd}

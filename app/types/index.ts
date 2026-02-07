@@ -59,6 +59,7 @@ export interface SeatInfo {
   userId: string | null;
   status: "active" | "inactive";
   displayName?: string; // プレイヤーの表示名
+  isFake?: boolean; // 架空ユーザーフラグ（trueの場合、接続検知スキップ）
 }
 
 /**

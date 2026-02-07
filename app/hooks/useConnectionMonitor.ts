@@ -43,11 +43,11 @@ export function useConnectionMonitor(
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const statusesRef = useRef<Map<string, ConnectionStatus>>(new Map());
 
-  // 着席中ユーザーIDを取得するヘルパー
+  // 着席中ユーザーIDを取得するヘルパー（架空ユーザーは除外）
   const getSeatedUserIds = useCallback((): Set<string> => {
     const ids = new Set<string>();
     for (const seat of seatsRef.current) {
-      if (seat?.userId) {
+      if (seat?.userId && !seat.isFake) {
         ids.add(seat.userId);
       }
     }

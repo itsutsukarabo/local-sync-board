@@ -14,6 +14,8 @@ interface MahjongPlayerCardProps {
   position: SeatPosition;
   displayName?: string; // プレイヤーの表示名
   disconnectedAt?: number | null;
+  isHostUser?: boolean; // 現在のユーザーがホストか
+  isFakePlayer?: boolean; // このカードが架空ユーザーか
   onDragStart: (playerId: string, x: number, y: number) => void;
   onDragUpdate: (x: number, y: number) => void;
   onDragEnd: (x: number, y: number) => void;
@@ -34,6 +36,8 @@ export default function MahjongPlayerCard({
   position,
   displayName,
   disconnectedAt,
+  isHostUser,
+  isFakePlayer,
   onDragStart,
   onDragUpdate,
   onDragEnd,
@@ -81,7 +85,7 @@ export default function MahjongPlayerCard({
   }, [playerId, onDragStart, cardCenterX, cardCenterY]);
 
   const gesture = Gesture.Pan()
-    .enabled(isCurrentUser) // 自分のカードのみドラッグ可能
+    .enabled(isCurrentUser || (isHostUser === true && isFakePlayer === true)) // 自分のカード + ホストは架空ユーザーもドラッグ可能
     .onStart((event) => {
       "worklet";
       // ドラッグ開始時の絶対座標を使用
