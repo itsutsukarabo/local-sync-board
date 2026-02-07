@@ -1317,8 +1317,24 @@ export async function joinFakeSeat(
 
     // 6. 架空ユーザーIDと表示名を生成
     const fakeUserId = `fake_${seatIndex}`;
-    const fakeNames = ["プレイヤーA", "プレイヤーB", "プレイヤーC", "プレイヤーD"];
-    const displayName = fakeNames[seatIndex];
+
+    // 使用中の名前を収集（seatsのdisplayName + current_stateに残っているゲストのID）
+    const usedNames = new Set<string>();
+    for (const s of seats) {
+      if (s && s.displayName) usedNames.add(s.displayName);
+    }
+    // current_stateに残っているゲスト（離席済み含む）の過去のdisplayNameは取れないが、
+    // 同じ名前の再利用を避けるため、seatsにあるdisplayNameのみチェック
+
+    const nameLetters = ["A", "B", "C", "D", "E", "F", "G", "H"];
+    let displayName = "プレイヤーA";
+    for (const letter of nameLetters) {
+      const candidate = `プレイヤー${letter}`;
+      if (!usedNames.has(candidate)) {
+        displayName = candidate;
+        break;
+      }
+    }
 
     // 7. 座席に着席
     seats[seatIndex] = {
@@ -1419,6 +1435,77 @@ export async function removeFakePlayer(
         error instanceof Error
           ? error
           : new Error("架空ユーザーの削除に失敗しました"),
+    };
+  }
+}
+
+/**
+ * 離席済みゲストを指定座席に再着席させる（ホスト専用）
+ * @param roomId - ルームID
+ * @param fakeUserId - 再着席させるゲストのID（例: "fake_0"）
+ * @param seatIndex - 座席インデックス (0-3)
+ */
+export async function reseatFakePlayer(
+  roomId: string,
+  fakeUserId: string,
+  seatIndex: number
+): Promise<{ error: Error | null }> {
+  try {
+    // 1. 最新のルーム情報を取得
+    const { data: room, error: fetchError } = await supabase
+      .from("rooms")
+      .select("seats, current_state")
+      .eq("id", roomId)
+      .single();
+
+    if (fetchError) {
+      throw fetchError;
+    }
+
+    if (!room) {
+      throw new Error("ルームが見つかりません");
+    }
+
+    // 2. 座席が空であることを確認
+    const seats: (SeatInfo | null)[] = room.seats || [null, null, null, null];
+    if (seats[seatIndex] !== null) {
+      throw new Error("この座席は既に使用されています");
+    }
+
+    // 3. current_stateにゲストが存在することを確認
+    if (!room.current_state[fakeUserId]) {
+      throw new Error("指定されたゲストが見つかりません");
+    }
+
+    // 4. 過去のdisplayNameを探す（seats全体から。見つからなければfakeUserId）
+    const displayName = fakeUserId;
+
+    // 5. 座席に着席
+    seats[seatIndex] = {
+      userId: fakeUserId,
+      status: "active",
+      displayName,
+      isFake: true,
+    };
+
+    // 6. 一括DB更新（current_stateは変更なし）
+    const { error: updateError } = await supabase
+      .from("rooms")
+      .update({ seats })
+      .eq("id", roomId);
+
+    if (updateError) {
+      throw updateError;
+    }
+
+    return { error: null };
+  } catch (error) {
+    console.error("Error reseating fake player:", error);
+    return {
+      error:
+        error instanceof Error
+          ? error
+          : new Error("ゲストの再着席に失敗しました"),
     };
   }
 }

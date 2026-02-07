@@ -34,8 +34,7 @@ interface MahjongTableProps {
   onTransfer: (fromId: string, toId: string, transfers: { variable: string; amount: number }[]) => Promise<void>;
   onJoinSeat: (seatIndex: number) => Promise<void>; // 座席に着席
   onJoinFakeSeat?: (seatIndex: number) => Promise<void>; // 架空ユーザー着席（ホスト長押し）
-  onForceLeave?: (targetUserId: string) => Promise<void>; // 実ユーザー強制離席
-  onRemoveFakePlayer?: (fakeUserId: string) => Promise<void>; // 架空ユーザー削除
+  onForceLeave?: (targetUserId: string) => Promise<void>; // ユーザー強制離席（ゲスト含む）
   isPotEnabled?: boolean;
   potActions?: PotAction[];
   connectionStatuses?: Map<string, ConnectionStatus>;
@@ -60,7 +59,6 @@ export default function MahjongTable({
   onJoinSeat,
   onJoinFakeSeat,
   onForceLeave,
-  onRemoveFakePlayer,
   isPotEnabled = true,
   potActions = [],
   connectionStatuses,
@@ -496,13 +494,7 @@ export default function MahjongTable({
           onForceLeave={
             isHost
               ? () => {
-                  const pid = playerInfoModal.playerId;
-                  const isFake = infoModalSeat.isFake === true;
-                  if (isFake) {
-                    onRemoveFakePlayer?.(pid);
-                  } else {
-                    onForceLeave?.(pid);
-                  }
+                  onForceLeave?.(playerInfoModal.playerId);
                 }
               : undefined
           }

@@ -219,6 +219,7 @@ function SettingsContent({
             currentState={room.current_state}
             variables={room.template.variables}
             currentUserId={user?.id}
+            seats={room.seats || [null, null, null, null]}
           />
         </View>
 

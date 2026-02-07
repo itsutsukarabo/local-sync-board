@@ -28,11 +28,10 @@ import {
   joinRoom,
   joinGame,
   leaveRoom,
-  updateRoomStatus,
   transferScore,
   joinSeat,
   joinFakeSeat,
-  removeFakePlayer,
+  reseatFakePlayer,
   forceLeaveSeat,
   leaveSeat,
   rollbackTo,
@@ -155,73 +154,6 @@ export default function GameScreen() {
   const layoutMode = room.template.layoutMode || "list";
   const isPotEnabled = room.template.potEnabled || false;
 
-  // ゲーム開始ハンドラー
-  const handleStartGame = () => {
-    if (!room) return;
-
-    // プレイヤーが1人以上いるかチェック
-    const playerCount = Object.keys(room.current_state || {}).length;
-    if (playerCount === 0) {
-      Alert.alert(
-        "エラー",
-        "ゲームを開始するには、少なくとも1人のプレイヤーが必要です"
-      );
-      return;
-    }
-
-    Alert.alert("確認", "ゲームを開始しますか？", [
-      { text: "キャンセル", style: "cancel" },
-      {
-        text: "開始",
-        onPress: async () => {
-          try {
-            // ルームのステータスを"playing"に更新
-            const { error } = await updateRoomStatus(room.id, "playing");
-
-            if (error) {
-              Alert.alert("エラー", error.message);
-              return;
-            }
-
-            Alert.alert("成功", "ゲームが開始されました！");
-          } catch (error) {
-            console.error("Error starting game:", error);
-            Alert.alert("エラー", "ゲームの開始に失敗しました");
-          }
-        },
-      },
-    ]);
-  };
-
-  // ゲーム終了ハンドラー
-  const handleEndGame = () => {
-    if (!room) return;
-
-    Alert.alert("確認", "ゲームを終了しますか？", [
-      { text: "キャンセル", style: "cancel" },
-      {
-        text: "終了",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            // ルームのステータスを"finished"に更新
-            const { error } = await updateRoomStatus(room.id, "finished");
-
-            if (error) {
-              Alert.alert("エラー", error.message);
-              return;
-            }
-
-            Alert.alert("成功", "ゲームが終了しました");
-          } catch (error) {
-            console.error("Error ending game:", error);
-            Alert.alert("エラー", "ゲームの終了に失敗しました");
-          }
-        },
-      },
-    ]);
-  };
-
   // ゲーム参加ハンドラー（リストモード用）
   const handleJoinGame = async () => {
     if (!room || !user) return;
@@ -335,42 +267,80 @@ export default function GameScreen() {
     }
   };
 
-  // 架空ユーザーを座席に着席させるハンドラー（ホスト長押し）
+  // ゲストを座席に着席させるハンドラー（ホスト長押し）
   const handleJoinFakeSeat = async (seatIndex: number) => {
     if (!room || !user) return;
 
-    try {
-      const { error } = await joinFakeSeat(room.id, seatIndex);
+    // 離席済みゲスト（current_stateにいるがseatsにいないfake_*）を検索
+    const seatedFakeIds = new Set(
+      (room.seats || [])
+        .filter((s: any) => s && s.isFake && s.userId)
+        .map((s: any) => s.userId)
+    );
+    const unseatedFakes = Object.keys(room.current_state || {})
+      .filter((id) => id.startsWith("fake_") && !seatedFakeIds.has(id));
 
-      if (error) {
-        Alert.alert("エラー", error.message);
-        return;
+    if (unseatedFakes.length === 0) {
+      // 離席済みゲストがいない場合は直接新規作成
+      try {
+        const { error } = await joinFakeSeat(room.id, seatIndex);
+        if (error) {
+          Alert.alert("エラー", error.message);
+          return;
+        }
+        await refetch();
+      } catch (error) {
+        console.error("Error joining fake seat:", error);
+        Alert.alert("エラー", "ゲストの作成に失敗しました");
       }
-
-      await refetch();
-    } catch (error) {
-      console.error("Error joining fake seat:", error);
-      Alert.alert("エラー", "架空ユーザーの作成に失敗しました");
+      return;
     }
-  };
 
-  // 架空ユーザーを削除するハンドラー（ホスト操作）
-  const handleRemoveFakePlayer = async (fakeUserId: string) => {
-    if (!room) return;
+    // 離席済みゲストがいる場合は選択UIを表示
+    const buttons: any[] = unseatedFakes.map((fakeId) => {
+      // seatsから過去のdisplayNameを探す（見つからなければID）
+      const playerState = room.current_state[fakeId];
+      const score = playerState?.score ?? 0;
+      // 過去に座っていたときのdisplayNameはseatsからは取れないのでcurrent_stateの情報を使う
+      // seats情報にはもういないので、fakeIdから推測する
+      return {
+        text: `${fakeId} (点数: ${score.toLocaleString()})`,
+        onPress: async () => {
+          try {
+            const { error } = await reseatFakePlayer(room.id, fakeId, seatIndex);
+            if (error) {
+              Alert.alert("エラー", error.message);
+              return;
+            }
+            await refetch();
+          } catch (error) {
+            console.error("Error reseating fake player:", error);
+            Alert.alert("エラー", "ゲストの再着席に失敗しました");
+          }
+        },
+      };
+    });
 
-    try {
-      const { error } = await removeFakePlayer(room.id, fakeUserId);
+    buttons.push({
+      text: "新規作成",
+      onPress: async () => {
+        try {
+          const { error } = await joinFakeSeat(room.id, seatIndex);
+          if (error) {
+            Alert.alert("エラー", error.message);
+            return;
+          }
+          await refetch();
+        } catch (error) {
+          console.error("Error joining fake seat:", error);
+          Alert.alert("エラー", "ゲストの作成に失敗しました");
+        }
+      },
+    });
 
-      if (error) {
-        Alert.alert("エラー", error.message);
-        return;
-      }
+    buttons.push({ text: "キャンセル", style: "cancel" });
 
-      await refetch();
-    } catch (error) {
-      console.error("Error removing fake player:", error);
-      Alert.alert("エラー", "架空ユーザーの削除に失敗しました");
-    }
+    Alert.alert("ゲストを選択", "既存のゲストを再着席させるか、新規作成しますか？", buttons);
   };
 
   // 実ユーザーを強制離席させるハンドラー（ホスト操作）
@@ -561,24 +531,6 @@ export default function GameScreen() {
         </View>
       </View>
 
-      {/* ステータスバッジ */}
-      <View style={styles.statusContainer}>
-        <View
-          style={[
-            styles.statusBadge,
-            room.status === "waiting" && styles.statusWaiting,
-            room.status === "playing" && styles.statusPlaying,
-            room.status === "finished" && styles.statusFinished,
-          ]}
-        >
-          <Text style={styles.statusText}>
-            {room.status === "waiting" && "募集中"}
-            {room.status === "playing" && "プレイ中"}
-            {room.status === "finished" && "終了"}
-          </Text>
-        </View>
-      </View>
-
       {/* 履歴ログ */}
       <HistoryLog
         history={history}
@@ -622,7 +574,6 @@ export default function GameScreen() {
               onJoinSeat={handleJoinSeat}
               onJoinFakeSeat={isHost ? handleJoinFakeSeat : undefined}
               onForceLeave={isHost ? handleForceLeave : undefined}
-              onRemoveFakePlayer={isHost ? handleRemoveFakePlayer : undefined}
               isPotEnabled={isPotEnabled}
               potActions={room.template.potActions || []}
               connectionStatuses={connectionStatuses}
@@ -630,35 +581,15 @@ export default function GameScreen() {
           </View>
 
           {/* ホスト専用コントロール（麻雀モード） */}
-          {isHost && (
+          {isHost && room.template.settlementConfig && (
             <View style={styles.mahjongHostControls}>
               <Text style={styles.sectionTitle}>ホストコントロール</Text>
-              {room.status === "waiting" && (
-                <TouchableOpacity
-                  style={styles.controlButton}
-                  onPress={handleStartGame}
-                >
-                  <Text style={styles.controlButtonText}>ゲーム開始</Text>
-                </TouchableOpacity>
-              )}
-              {room.status === "playing" && (
-                <>
-                  {room.template.settlementConfig && (
-                    <TouchableOpacity
-                      style={[styles.controlButton, styles.controlButtonSettlement]}
-                      onPress={handleSettlement}
-                    >
-                      <Text style={styles.controlButtonText}>📊 精算</Text>
-                    </TouchableOpacity>
-                  )}
-                  <TouchableOpacity
-                    style={[styles.controlButton, styles.controlButtonDanger]}
-                    onPress={handleEndGame}
-                  >
-                    <Text style={styles.controlButtonText}>ゲーム終了</Text>
-                  </TouchableOpacity>
-                </>
-              )}
+              <TouchableOpacity
+                style={[styles.controlButton, styles.controlButtonSettlement]}
+                onPress={handleSettlement}
+              >
+                <Text style={styles.controlButtonText}>📊 精算</Text>
+              </TouchableOpacity>
             </View>
           )}
         </ScrollView>
@@ -694,35 +625,15 @@ export default function GameScreen() {
           />
 
           {/* ホスト専用コントロール */}
-          {isHost && (
+          {isHost && room.template.settlementConfig && (
             <View style={styles.hostControls}>
               <Text style={styles.sectionTitle}>ホストコントロール</Text>
-              {room.status === "waiting" && (
-                <TouchableOpacity
-                  style={styles.controlButton}
-                  onPress={handleStartGame}
-                >
-                  <Text style={styles.controlButtonText}>ゲーム開始</Text>
-                </TouchableOpacity>
-              )}
-              {room.status === "playing" && (
-                <>
-                  {room.template.settlementConfig && (
-                    <TouchableOpacity
-                      style={[styles.controlButton, styles.controlButtonSettlement]}
-                      onPress={handleSettlement}
-                    >
-                      <Text style={styles.controlButtonText}>📊 精算</Text>
-                    </TouchableOpacity>
-                  )}
-                  <TouchableOpacity
-                    style={[styles.controlButton, styles.controlButtonDanger]}
-                    onPress={handleEndGame}
-                  >
-                    <Text style={styles.controlButtonText}>ゲーム終了</Text>
-                  </TouchableOpacity>
-                </>
-              )}
+              <TouchableOpacity
+                style={[styles.controlButton, styles.controlButtonSettlement]}
+                onPress={handleSettlement}
+              >
+                <Text style={styles.controlButtonText}>📊 精算</Text>
+              </TouchableOpacity>
             </View>
           )}
         </ScrollView>
@@ -789,29 +700,6 @@ const styles = StyleSheet.create({
   },
   settingsButton: {
     fontSize: 24,
-  },
-  statusContainer: {
-    padding: 16,
-    alignItems: "center",
-  },
-  statusBadge: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 16,
-  },
-  statusWaiting: {
-    backgroundColor: "#dbeafe",
-  },
-  statusPlaying: {
-    backgroundColor: "#dcfce7",
-  },
-  statusFinished: {
-    backgroundColor: "#f3f4f6",
-  },
-  statusText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#1f2937",
   },
   content: {
     flex: 1,

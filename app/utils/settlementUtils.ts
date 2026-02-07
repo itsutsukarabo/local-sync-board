@@ -112,7 +112,7 @@ export function executeSettlement(
     const player = seatedPlayers[i];
     const rank = i + 1;
     const rankBonus = rankBonuses?.[i] ?? 0;
-    const adjustedScore = player.score - initialScore + rankBonus;
+    const adjustedScore = player.score + rankBonus;
 
     // dividerで割り、小数点第一位まで切り捨て
     const divided = Math.floor((adjustedScore / divider) * 10) / 10;

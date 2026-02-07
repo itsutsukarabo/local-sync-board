@@ -12,7 +12,7 @@ import {
   StyleSheet,
   Alert,
 } from "react-native";
-import { Variable, GameState } from "../../types";
+import { Variable, GameState, SeatInfo } from "../../types";
 import { forceEditScore } from "../../lib/roomApi";
 
 interface PlayerScoreEditorProps {
@@ -21,6 +21,7 @@ interface PlayerScoreEditorProps {
   currentState: GameState;
   variables: Variable[];
   currentUserId?: string;
+  seats: (SeatInfo | null)[];
 }
 
 export default function PlayerScoreEditor({
@@ -29,6 +30,7 @@ export default function PlayerScoreEditor({
   currentState,
   variables,
   currentUserId,
+  seats,
 }: PlayerScoreEditorProps) {
   // playerId → variableKey → 入力文字列
   const [editValues, setEditValues] = useState<
@@ -126,9 +128,11 @@ export default function PlayerScoreEditor({
       {players.map((playerId) => {
         const isSaving = savingPlayer === playerId;
         const changed = hasChanges(playerId);
+        const seatInfo = seats.find((s) => s && s.userId === playerId);
+        const baseName = seatInfo?.displayName || `${playerId.substring(0, 8)}...`;
         const displayName = playerId === currentUserId
-          ? `${playerId.substring(0, 8)}... (あなた)`
-          : `${playerId.substring(0, 8)}...`;
+          ? `${baseName} (あなた)`
+          : baseName;
 
         return (
           <View key={playerId} style={styles.playerCard}>

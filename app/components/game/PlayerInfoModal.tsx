@@ -41,14 +41,10 @@ export default function PlayerInfoModal({
   if (!visible) return null;
 
   const handleForceLeave = () => {
-    const message = isFakePlayer
-      ? `${displayName}（架空ユーザー）を削除しますか？`
-      : `${displayName} を離席させますか？`;
-
-    Alert.alert("確認", message, [
+    Alert.alert("確認", `${displayName} を離席させますか？`, [
       { text: "キャンセル", style: "cancel" },
       {
-        text: isFakePlayer ? "削除する" : "離席させる",
+        text: "離席させる",
         style: "destructive",
         onPress: () => {
           onForceLeave?.();
@@ -79,7 +75,7 @@ export default function PlayerInfoModal({
             {/* 架空ユーザーバッジ */}
             {isFakePlayer && (
               <View style={styles.fakeBadge}>
-                <Text style={styles.fakeBadgeText}>架空ユーザー</Text>
+                <Text style={styles.fakeBadgeText}>ゲスト</Text>
               </View>
             )}
 
@@ -106,7 +102,7 @@ export default function PlayerInfoModal({
                   onPress={handleForceLeave}
                 >
                   <Text style={styles.forceLeaveButtonText}>
-                    {isFakePlayer ? "🗑️ 削除する" : "🚪 離席させる"}
+                    🚪 離席させる
                   </Text>
                 </TouchableOpacity>
               </View>
