@@ -20,6 +20,8 @@ interface HistoryLogProps {
   onRollback: (historyId: string) => Promise<void>;
   onUndo: () => Promise<void>;
   isHost: boolean;
+  settlementCount?: number;
+  onOpenSettlementHistory?: () => void;
 }
 
 export default function HistoryLog({
@@ -27,6 +29,8 @@ export default function HistoryLog({
   onRollback,
   onUndo,
   isHost,
+  settlementCount,
+  onOpenSettlementHistory,
 }: HistoryLogProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -101,6 +105,16 @@ export default function HistoryLog({
           </Text>
           <Text style={styles.expandIcon}>{isExpanded ? "▲" : "▼"}</Text>
         </TouchableOpacity>
+
+        {/* 精算履歴ボタン */}
+        {(settlementCount ?? 0) > 0 && onOpenSettlementHistory && (
+          <TouchableOpacity
+            style={styles.settlementButton}
+            onPress={onOpenSettlementHistory}
+          >
+            <Text style={styles.settlementButtonText}>📊</Text>
+          </TouchableOpacity>
+        )}
 
         {/* Undoボタン */}
         {isHost && history.length > 0 && (
@@ -237,6 +251,16 @@ const styles = StyleSheet.create({
     marginLeft: 8,
     fontSize: 12,
     color: "#6b7280",
+  },
+  settlementButton: {
+    backgroundColor: "#ede9fe",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 6,
+    marginRight: 8,
+  },
+  settlementButtonText: {
+    fontSize: 16,
   },
   undoButton: {
     backgroundColor: "#f59e0b",

@@ -12,6 +12,7 @@ import {
   HistoryEntry,
   GameStateSnapshot,
   SeatInfo,
+  Settlement,
 } from "../types";
 import { generateRoomCode } from "../utils/roomUtils";
 
@@ -1259,6 +1260,98 @@ export async function forceLeaveSeat(
         error instanceof Error
           ? error
           : new Error("強制離席に失敗しました"),
+    };
+  }
+}
+
+/**
+ * 精算結果を保存し、スコアを初期値にリセット
+ * @param roomId - ルームID
+ * @param settlement - 精算結果オブジェクト
+ */
+export async function saveSettlement(
+  roomId: string,
+  settlement: Settlement
+): Promise<{ error: Error | null }> {
+  try {
+    // 1. 最新の current_state とテンプレートを取得
+    const { data: room, error: fetchError } = await supabase
+      .from("rooms")
+      .select("current_state, template")
+      .eq("id", roomId)
+      .single();
+
+    if (fetchError) {
+      throw fetchError;
+    }
+
+    if (!room) {
+      throw new Error("ルームが見つかりません");
+    }
+
+    const currentState = { ...room.current_state };
+
+    // 2. 操作前のスナップショットを作成（履歴用）
+    const beforeSnapshot = createSnapshot(currentState);
+
+    // 3. __settlements__ 配列に Settlement を追加
+    const existingSettlements = currentState.__settlements__ || [];
+    currentState.__settlements__ = [...existingSettlements, settlement];
+
+    // 4. score変数を初期値にリセット（他の変数はそのまま）
+    const scoreVar = room.template?.variables?.find(
+      (v: { key: string }) => v.key === "score"
+    );
+    if (scoreVar) {
+      const playerIds = Object.keys(currentState).filter(
+        (key) => !key.startsWith("__")
+      );
+      for (const playerId of playerIds) {
+        if (currentState[playerId]) {
+          currentState[playerId].score = scoreVar.initial;
+        }
+      }
+    }
+
+    // 供託金のscoreもリセット
+    if (currentState.__pot__?.score !== undefined) {
+      currentState.__pot__.score = 0;
+    }
+
+    // 5. 履歴メッセージを作成（精算結果サマリ）
+    const resultSummary = Object.values(settlement.playerResults)
+      .sort((a, b) => a.rank - b.rank)
+      .map((r) => `${r.displayName}: ${r.result >= 0 ? "+" : ""}${r.result}`)
+      .join(", ");
+
+    const historyEntry: HistoryEntry = {
+      id: generateUUID(),
+      timestamp: Date.now(),
+      message: `📊 精算: ${resultSummary}`,
+      snapshot: beforeSnapshot,
+    };
+
+    // 6. 履歴に追加して保存
+    const existingHistory = currentState.__history__ || [];
+    currentState.__history__ = [...existingHistory, historyEntry];
+
+    const { error: updateError } = await supabase
+      .from("rooms")
+      .update({ current_state: currentState })
+      .eq("id", roomId);
+
+    if (updateError) {
+      throw updateError;
+    }
+
+    return { error: null };
+  } catch (error) {
+    console.error("Error saving settlement:", error);
+    return {
+      error:
+        error instanceof Error
+          ? error
+          : new Error("精算の保存に失敗しました"),
     };
   }
 }

@@ -3,7 +3,7 @@
  * ルームのリアルタイム同期とプレイヤー一覧表示
  */
 
-import React, { useEffect, useCallback } from "react";
+import React, { useEffect, useCallback, useState } from "react";
 import {
   View,
   Text,
@@ -19,9 +19,11 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useRoomRealtime } from "../../hooks/useRoomRealtime";
 import { useConnectionMonitor } from "../../hooks/useConnectionMonitor";
 import { useAuth } from "../../hooks/useAuth";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import PlayerList from "../../components/game/PlayerList";
 import MahjongTable from "../../components/game/MahjongTable";
 import HistoryLog from "../../components/game/HistoryLog";
+import SettlementHistory from "../../components/game/SettlementHistory";
 import {
   joinRoom,
   joinGame,
@@ -32,9 +34,14 @@ import {
   leaveSeat,
   rollbackTo,
   undoLast,
+  saveSettlement,
 } from "../../lib/roomApi";
-import { HistoryEntry } from "../../types";
+import { HistoryEntry, Settlement } from "../../types";
 import { supabase } from "../../lib/supabase";
+import {
+  canExecuteSettlement,
+  executeSettlement,
+} from "../../utils/settlementUtils";
 
 export default function GameScreen() {
   const router = useRouter();
@@ -47,6 +54,8 @@ export default function GameScreen() {
     room?.seats ?? [null, null, null, null],
     room?.template?.forceLeaveTimeoutSec,
   );
+
+  const [settlementHistoryVisible, setSettlementHistoryVisible] = useState(false);
 
   console.log("[GameScreen render]", { id, loading, hasRoom: !!room, hasError: !!error, hasUser: !!user });
 
@@ -393,11 +402,83 @@ export default function GameScreen() {
     }
   };
 
+  // 精算ハンドラー
+  const handleSettlement = () => {
+    if (!room) return;
+
+    const { canExecute, reason } = canExecuteSettlement(
+      room.current_state,
+      room.seats || [null, null, null, null],
+      room.template.variables
+    );
+
+    if (!canExecute) {
+      Alert.alert("精算不可", reason || "精算を実行できません");
+      return;
+    }
+
+    Alert.alert("確認", "半荘の精算を実行しますか？\nスコアは初期値にリセットされます。", [
+      { text: "キャンセル", style: "cancel" },
+      {
+        text: "精算実行",
+        onPress: async () => {
+          try {
+            const config = room.template.settlementConfig;
+            if (!config) {
+              Alert.alert("エラー", "精算設定がありません");
+              return;
+            }
+
+            const settlement = executeSettlement(
+              room.current_state,
+              room.seats || [null, null, null, null],
+              config,
+              room.template.variables
+            );
+
+            const { error } = await saveSettlement(room.id, settlement);
+
+            if (error) {
+              Alert.alert("エラー", error.message);
+              return;
+            }
+
+            await refetch();
+          } catch (error) {
+            console.error("Error executing settlement:", error);
+            Alert.alert("エラー", "精算の実行に失敗しました");
+          }
+        },
+      },
+    ]);
+  };
+
   // 履歴を取得
   const history: HistoryEntry[] = room?.current_state?.__history__ || [];
 
+  // 精算履歴を取得
+  const settlements: Settlement[] = room?.current_state?.__settlements__ || [];
+
+  // 左スワイプで精算履歴を開くジェスチャー
+  const swipeGesture = Gesture.Pan()
+    .activeOffsetX(-30)
+    .onEnd((event) => {
+      if (event.translationX < -50) {
+        setSettlementHistoryVisible(true);
+      }
+    })
+    .runOnJS(true);
+
   return (
+    <GestureDetector gesture={swipeGesture}>
     <SafeAreaView style={styles.container}>
+      {/* 精算履歴Modal */}
+      <SettlementHistory
+        settlements={settlements}
+        visible={settlementHistoryVisible}
+        onClose={() => setSettlementHistoryVisible(false)}
+      />
+
       {/* ヘッダー */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
@@ -444,6 +525,8 @@ export default function GameScreen() {
         onRollback={handleRollback}
         onUndo={handleUndo}
         isHost={isHost}
+        settlementCount={settlements.length}
+        onOpenSettlementHistory={() => setSettlementHistoryVisible(true)}
       />
 
       {/* メインコンテンツ */}
@@ -496,12 +579,22 @@ export default function GameScreen() {
                 </TouchableOpacity>
               )}
               {room.status === "playing" && (
-                <TouchableOpacity
-                  style={[styles.controlButton, styles.controlButtonDanger]}
-                  onPress={handleEndGame}
-                >
-                  <Text style={styles.controlButtonText}>ゲーム終了</Text>
-                </TouchableOpacity>
+                <>
+                  {room.template.settlementConfig && (
+                    <TouchableOpacity
+                      style={[styles.controlButton, styles.controlButtonSettlement]}
+                      onPress={handleSettlement}
+                    >
+                      <Text style={styles.controlButtonText}>📊 精算</Text>
+                    </TouchableOpacity>
+                  )}
+                  <TouchableOpacity
+                    style={[styles.controlButton, styles.controlButtonDanger]}
+                    onPress={handleEndGame}
+                  >
+                    <Text style={styles.controlButtonText}>ゲーム終了</Text>
+                  </TouchableOpacity>
+                </>
               )}
             </View>
           )}
@@ -550,18 +643,29 @@ export default function GameScreen() {
                 </TouchableOpacity>
               )}
               {room.status === "playing" && (
-                <TouchableOpacity
-                  style={[styles.controlButton, styles.controlButtonDanger]}
-                  onPress={handleEndGame}
-                >
-                  <Text style={styles.controlButtonText}>ゲーム終了</Text>
-                </TouchableOpacity>
+                <>
+                  {room.template.settlementConfig && (
+                    <TouchableOpacity
+                      style={[styles.controlButton, styles.controlButtonSettlement]}
+                      onPress={handleSettlement}
+                    >
+                      <Text style={styles.controlButtonText}>📊 精算</Text>
+                    </TouchableOpacity>
+                  )}
+                  <TouchableOpacity
+                    style={[styles.controlButton, styles.controlButtonDanger]}
+                    onPress={handleEndGame}
+                  >
+                    <Text style={styles.controlButtonText}>ゲーム終了</Text>
+                  </TouchableOpacity>
+                </>
               )}
             </View>
           )}
         </ScrollView>
       )}
     </SafeAreaView>
+    </GestureDetector>
   );
 }
 
@@ -763,6 +867,9 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: "center",
     marginBottom: 8,
+  },
+  controlButtonSettlement: {
+    backgroundColor: "#8b5cf6",
   },
   controlButtonDanger: {
     backgroundColor: "#ef4444",
