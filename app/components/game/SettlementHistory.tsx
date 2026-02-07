@@ -18,6 +18,8 @@ interface SettlementHistoryProps {
   settlements: Settlement[];
   visible: boolean;
   onClose: () => void;
+  isHost?: boolean;
+  onAddAdjustment?: () => void;
 }
 
 /** プレイヤー列情報 */
@@ -36,6 +38,8 @@ export default function SettlementHistory({
   settlements,
   visible,
   onClose,
+  isHost,
+  onAddAdjustment,
 }: SettlementHistoryProps) {
   if (!visible) return null;
 
@@ -170,9 +174,36 @@ export default function SettlementHistory({
                       );
                     })}
                   </View>
+                  {/* ホスト用：調整を追加ボタン */}
+                  {isHost && onAddAdjustment && (
+                    <View style={styles.addAdjustmentRow}>
+                      <TouchableOpacity
+                        style={styles.addAdjustmentButton}
+                        onPress={onAddAdjustment}
+                      >
+                        <Text style={styles.addAdjustmentButtonText}>
+                          + 調整を追加
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
                 </View>
               </ScrollView>
             </ScrollView>
+          )}
+
+          {/* 精算履歴が空でもホストなら調整追加ボタンを表示 */}
+          {settlements.length === 0 && isHost && onAddAdjustment && (
+            <View style={styles.emptyAddAdjustment}>
+              <TouchableOpacity
+                style={styles.addAdjustmentButton}
+                onPress={onAddAdjustment}
+              >
+                <Text style={styles.addAdjustmentButtonText}>
+                  + 調整を追加
+                </Text>
+              </TouchableOpacity>
+            </View>
           )}
         </View>
       </View>
@@ -281,5 +312,24 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     fontFamily: "monospace",
     color: "#1f2937",
+  },
+  addAdjustmentRow: {
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  addAdjustmentButton: {
+    backgroundColor: "#8b5cf6",
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+  },
+  addAdjustmentButtonText: {
+    color: "#ffffff",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  emptyAddAdjustment: {
+    padding: 16,
+    alignItems: "center",
   },
 });

@@ -24,6 +24,7 @@ import PlayerList from "../../components/game/PlayerList";
 import MahjongTable from "../../components/game/MahjongTable";
 import HistoryLog from "../../components/game/HistoryLog";
 import SettlementHistory from "../../components/game/SettlementHistory";
+import AdjustmentModal from "../../components/game/AdjustmentModal";
 import {
   joinRoom,
   joinGame,
@@ -37,6 +38,7 @@ import {
   rollbackTo,
   undoLast,
   saveSettlement,
+  saveAdjustment,
 } from "../../lib/roomApi";
 import { HistoryEntry, Settlement } from "../../types";
 import { supabase } from "../../lib/supabase";
@@ -58,6 +60,7 @@ export default function GameScreen() {
   );
 
   const [settlementHistoryVisible, setSettlementHistoryVisible] = useState(false);
+  const [adjustmentModalVisible, setAdjustmentModalVisible] = useState(false);
 
   console.log("[GameScreen render]", { id, loading, hasRoom: !!room, hasError: !!error, hasUser: !!user });
 
@@ -481,6 +484,26 @@ export default function GameScreen() {
     ]);
   };
 
+  // 調整行追加ハンドラー
+  const handleAddAdjustment = async (settlement: Settlement) => {
+    if (!room) return;
+
+    try {
+      const { error } = await saveAdjustment(room.id, settlement);
+
+      if (error) {
+        Alert.alert("エラー", error.message);
+        return;
+      }
+
+      setAdjustmentModalVisible(false);
+      await refetch();
+    } catch (error) {
+      console.error("Error saving adjustment:", error);
+      Alert.alert("エラー", "調整の保存に失敗しました");
+    }
+  };
+
   // 履歴を取得
   const history: HistoryEntry[] = room?.current_state?.__history__ || [];
 
@@ -505,6 +528,32 @@ export default function GameScreen() {
         settlements={settlements}
         visible={settlementHistoryVisible}
         onClose={() => setSettlementHistoryVisible(false)}
+        isHost={isHost}
+        onAddAdjustment={() => {
+          setSettlementHistoryVisible(false);
+          setAdjustmentModalVisible(true);
+        }}
+      />
+
+      {/* 調整行入力Modal */}
+      <AdjustmentModal
+        visible={adjustmentModalVisible}
+        onClose={() => setAdjustmentModalVisible(false)}
+        onConfirm={handleAddAdjustment}
+        players={
+          // settlementsからプレイヤー列を構築、なければseatsから
+          settlements.length > 0
+            ? Object.entries(settlements[0].playerResults).map(([userId, pr]) => ({
+                userId,
+                displayName: pr.displayName,
+              }))
+            : (room.seats || [])
+                .filter((s): s is NonNullable<typeof s> => s !== null && s.userId !== null)
+                .map((s) => ({
+                  userId: s.userId!,
+                  displayName: s.displayName || s.userId!.substring(0, 8),
+                }))
+        }
       />
 
       {/* ヘッダー */}

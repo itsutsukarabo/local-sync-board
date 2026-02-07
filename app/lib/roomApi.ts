@@ -1609,3 +1609,75 @@ export async function saveSettlement(
     };
   }
 }
+
+/**
+ * 調整行を保存（スコアリセット・供託リセットなし）
+ * @param roomId - ルームID
+ * @param settlement - 調整結果オブジェクト (type="adjustment")
+ */
+export async function saveAdjustment(
+  roomId: string,
+  settlement: Settlement
+): Promise<{ error: Error | null }> {
+  try {
+    // 1. 最新の current_state を取得
+    const { data: room, error: fetchError } = await supabase
+      .from("rooms")
+      .select("current_state")
+      .eq("id", roomId)
+      .single();
+
+    if (fetchError) {
+      throw fetchError;
+    }
+
+    if (!room) {
+      throw new Error("ルームが見つかりません");
+    }
+
+    const currentState = { ...room.current_state };
+
+    // 2. 操作前のスナップショットを作成（履歴用）
+    const beforeSnapshot = createSnapshot(currentState);
+
+    // 3. __settlements__ 配列に Settlement を追加
+    const existingSettlements = currentState.__settlements__ || [];
+    currentState.__settlements__ = [...existingSettlements, settlement];
+
+    // 4. 履歴メッセージを作成（調整サマリ）
+    const resultSummary = Object.values(settlement.playerResults)
+      .filter((r) => r.result !== 0)
+      .map((r) => `${r.displayName}: ${r.result >= 0 ? "+" : ""}${r.result.toFixed(1)}`)
+      .join(", ");
+
+    const historyEntry: HistoryEntry = {
+      id: generateUUID(),
+      timestamp: Date.now(),
+      message: `📝 調整: ${resultSummary}`,
+      snapshot: beforeSnapshot,
+    };
+
+    // 5. 履歴に追加して保存
+    const existingHistory = currentState.__history__ || [];
+    currentState.__history__ = [...existingHistory, historyEntry];
+
+    const { error: updateError } = await supabase
+      .from("rooms")
+      .update({ current_state: currentState })
+      .eq("id", roomId);
+
+    if (updateError) {
+      throw updateError;
+    }
+
+    return { error: null };
+  } catch (error) {
+    console.error("Error saving adjustment:", error);
+    return {
+      error:
+        error instanceof Error
+          ? error
+          : new Error("調整の保存に失敗しました"),
+    };
+  }
+}
