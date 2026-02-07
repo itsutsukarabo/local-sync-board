@@ -541,12 +541,21 @@ export default function GameScreen() {
         onClose={() => setAdjustmentModalVisible(false)}
         onConfirm={handleAddAdjustment}
         players={
-          // settlementsからプレイヤー列を構築、なければseatsから
+          // 全settlementsからプレイヤー列を集約（出現順を維持）、なければseatsから
           settlements.length > 0
-            ? Object.entries(settlements[0].playerResults).map(([userId, pr]) => ({
-                userId,
-                displayName: pr.displayName,
-              }))
+            ? (() => {
+                const players: { userId: string; displayName: string }[] = [];
+                const seenUserIds = new Set<string>();
+                for (const s of settlements) {
+                  for (const [userId, pr] of Object.entries(s.playerResults)) {
+                    if (!seenUserIds.has(userId)) {
+                      seenUserIds.add(userId);
+                      players.push({ userId, displayName: pr.displayName });
+                    }
+                  }
+                }
+                return players;
+              })()
             : (room.seats || [])
                 .filter((s): s is NonNullable<typeof s> => s !== null && s.userId !== null)
                 .map((s) => ({

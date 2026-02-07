@@ -136,7 +136,7 @@ export default function AdjustmentModal({
                 </Text>
                 <TextInput
                   style={styles.input}
-                  keyboardType="numeric"
+                  keyboardType="numbers-and-punctuation"
                   value={values[p.userId] || ""}
                   onChangeText={(text) => handleChangeValue(p.userId, text)}
                   placeholder="0"
