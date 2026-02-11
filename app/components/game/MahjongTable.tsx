@@ -375,6 +375,7 @@ export default function MahjongTable({
                 seatIndex={index}
                 onJoinSeat={onJoinSeat}
                 onLongPressJoinFake={isHost ? onJoinFakeSeat : undefined}
+                isUserSeated={isUserSeated}
               />
             );
           }

@@ -8,6 +8,7 @@ interface EmptySeatProps {
   seatIndex: number;
   onJoinSeat: (seatIndex: number) => void;
   onLongPressJoinFake?: (seatIndex: number) => void;
+  isUserSeated?: boolean;
 }
 
 export default function EmptySeat({
@@ -15,29 +16,52 @@ export default function EmptySeat({
   seatIndex,
   onJoinSeat,
   onLongPressJoinFake,
+  isUserSeated = false,
 }: EmptySeatProps) {
   const positionStyle = getSeatStyle(position);
   const [showGuestHint, setShowGuestHint] = useState(false);
 
-  // ホストの場合のみ5秒ごとに表示を切り替え
+  // ホストが未着席の場合のみ5秒ごとに表示を切り替え
+  const canCreateGuest = !!onLongPressJoinFake;
+  const hostSeated = canCreateGuest && isUserSeated;
+
   useEffect(() => {
-    if (!onLongPressJoinFake) return;
+    // ホスト着席時はタイマー不要（固定表示）
+    if (!canCreateGuest || hostSeated) return;
     const interval = setInterval(() => {
       setShowGuestHint((prev) => !prev);
     }, 5000);
     return () => clearInterval(interval);
-  }, [onLongPressJoinFake]);
+  }, [canCreateGuest, hostSeated]);
 
-  const label = onLongPressJoinFake && showGuestHint
-    ? "長押しでゲスト作成"
-    : "着席する";
+  // ラベルとアクションの決定
+  let label: string;
+  let handlePress: () => void;
+  let handleLongPress: (() => void) | undefined;
+
+  if (hostSeated) {
+    // ホスト着席済み: ゲスト作成のみ（タップでも長押しでも）
+    label = "タップでゲスト作成";
+    handlePress = () => onLongPressJoinFake!(seatIndex);
+    handleLongPress = undefined;
+  } else if (isUserSeated) {
+    // 非ホストが着席済み: 表示されないはずだが念のため
+    label = "";
+    handlePress = () => {};
+    handleLongPress = undefined;
+  } else {
+    // 未着席: 従来の動作
+    label = canCreateGuest && showGuestHint ? "長押しでゲスト作成" : "着席する";
+    handlePress = () => onJoinSeat(seatIndex);
+    handleLongPress = canCreateGuest ? () => onLongPressJoinFake!(seatIndex) : undefined;
+  }
 
   return (
     <View style={[styles.container, positionStyle]}>
       <TouchableOpacity
         style={styles.button}
-        onPress={() => onJoinSeat(seatIndex)}
-        onLongPress={onLongPressJoinFake ? () => onLongPressJoinFake(seatIndex) : undefined}
+        onPress={handlePress}
+        onLongPress={handleLongPress}
         activeOpacity={0.7}
       >
         <View style={styles.iconContainer}>
