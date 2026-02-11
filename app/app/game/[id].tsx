@@ -25,6 +25,8 @@ import MahjongTable from "../../components/game/MahjongTable";
 import HistoryLog from "../../components/game/HistoryLog";
 import SettlementHistory from "../../components/game/SettlementHistory";
 import AdjustmentModal from "../../components/game/AdjustmentModal";
+import Toast from "../../components/common/Toast";
+import { useToast } from "../../hooks/useToast";
 import {
   joinRoom,
   joinGame,
@@ -62,6 +64,7 @@ export default function GameScreen() {
   const [settlementHistoryVisible, setSettlementHistoryVisible] = useState(false);
   const [adjustmentModalVisible, setAdjustmentModalVisible] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const { toasts, show: showToast, dismiss: dismissToast } = useToast();
 
   console.log("[GameScreen render]", { id, loading, hasRoom: !!room, hasError: !!error, hasUser: !!user });
 
@@ -238,16 +241,17 @@ export default function GameScreen() {
       const { error } = await transferScore(room.id, fromId, toId, transfers, fromName, toName);
 
       if (error) {
-        Alert.alert("エラー", error.message);
+        showToast("error", error.message);
         return;
       }
 
+      showToast("success", "支払いが完了しました");
       // 操作元クライアントのUIを確実に更新するため手動で再取得
       await refetch();
 
     } catch (error) {
       console.error("Error transferring score:", error);
-      Alert.alert("エラー", "スコアの移動に失敗しました");
+      showToast("error", "スコアの移動に失敗しました");
     } finally {
       setIsProcessing(false);
     }
@@ -405,7 +409,7 @@ export default function GameScreen() {
       const { error } = await rollbackTo(room.id, historyId);
 
       if (error) {
-        Alert.alert("エラー", error.message);
+        showToast("error", error.message);
         return;
       }
 
@@ -413,7 +417,7 @@ export default function GameScreen() {
 
     } catch (error) {
       console.error("Error rolling back:", error);
-      Alert.alert("エラー", "ロールバックに失敗しました");
+      showToast("error", "ロールバックに失敗しました");
     }
   };
 
@@ -425,7 +429,7 @@ export default function GameScreen() {
       const { error } = await undoLast(room.id);
 
       if (error) {
-        Alert.alert("エラー", error.message);
+        showToast("error", error.message);
         return;
       }
 
@@ -433,7 +437,7 @@ export default function GameScreen() {
 
     } catch (error) {
       console.error("Error undoing:", error);
-      Alert.alert("エラー", "取り消しに失敗しました");
+      showToast("error", "取り消しに失敗しました");
     }
   };
 
@@ -474,14 +478,15 @@ export default function GameScreen() {
             const { error } = await saveSettlement(room.id, settlement);
 
             if (error) {
-              Alert.alert("エラー", error.message);
+              showToast("error", error.message);
               return;
             }
 
+            showToast("success", "精算が完了しました");
             await refetch();
           } catch (error) {
             console.error("Error executing settlement:", error);
-            Alert.alert("エラー", "精算の実行に失敗しました");
+            showToast("error", "精算の実行に失敗しました");
           }
         },
       },
@@ -496,7 +501,7 @@ export default function GameScreen() {
       const { error } = await saveAdjustment(room.id, settlement);
 
       if (error) {
-        Alert.alert("エラー", error.message);
+        showToast("error", error.message);
         return;
       }
 
@@ -504,7 +509,7 @@ export default function GameScreen() {
       await refetch();
     } catch (error) {
       console.error("Error saving adjustment:", error);
-      Alert.alert("エラー", "調整の保存に失敗しました");
+      showToast("error", "調整の保存に失敗しました");
     }
   };
 
@@ -699,6 +704,7 @@ export default function GameScreen() {
           )}
         </ScrollView>
       )}
+      <Toast toasts={toasts} onDismiss={dismissToast} />
     </SafeAreaView>
     </GestureDetector>
   );

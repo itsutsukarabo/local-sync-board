@@ -43,6 +43,7 @@ export interface AuthContextType {
   profile: Profile | null;
   session: AuthSession | null;
   loading: boolean;
+  profileLoading: boolean; // プロファイル取得中フラグ
   signInAnonymously: () => Promise<void>;
   updateProfile: (data: ProfileUpdate) => Promise<void>;
   signOut: () => Promise<void>;

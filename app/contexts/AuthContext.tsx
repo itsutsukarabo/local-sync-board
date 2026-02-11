@@ -31,6 +31,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [session, setSession] = useState<AuthSession | null>(null);
   const [loading, setLoading] = useState(true);
+  const [profileLoading, setProfileLoading] = useState(false);
 
   // デバッグ用: 経過時間付きログ
   const mountTimeRef = useRef(Date.now());
@@ -198,20 +199,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(currentSession?.user ?? null);
 
       if (currentSession?.user) {
+        // プロファイル取得開始前にprofileLoadingをtrueに（リダイレクト防止）
+        setProfileLoading(true);
+
+        // セッション確認できた時点でloading解除（プロファイル取得を待たない）
+        if (!loadingResolved) {
+          loadingResolved = true;
+          dbg("onAuthStateChange: setLoading(false) - session ready, profileLoading=true");
+          setLoading(false);
+        }
+
+        // プロファイルはバックグラウンドで取得
         dbg("onAuthStateChange: fetching profile for user", currentSession.user.id);
         const profileData = await fetchProfileWithRetry(currentSession.user.id);
         dbg("onAuthStateChange: profile fetched, hasProfile:", !!profileData, "displayName:", profileData?.display_name);
         if (mounted) {
           setProfile(profileData);
-          // プロファイル取得完了 → getSessionタイムアウトを待たずにloading解除
-          if (!loadingResolved) {
-            loadingResolved = true;
-            dbg("onAuthStateChange: setLoading(false) - profile ready");
-            setLoading(false);
-          }
+          setProfileLoading(false);
         }
       } else {
         setProfile(null);
+        setProfileLoading(false);
       }
     });
 
@@ -300,11 +308,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       profile,
       session,
       loading,
+      profileLoading,
       signInAnonymously,
       updateProfile,
       signOut,
     }),
-    [user, profile, session, loading]
+    [user, profile, session, loading, profileLoading]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

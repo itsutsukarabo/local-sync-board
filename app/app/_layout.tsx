@@ -17,13 +17,16 @@ import {
  * 認証状態に基づいてリダイレクトを制御
  */
 function AuthGuard({ children }: { children: React.ReactNode }) {
-  const { user, profile, loading, signInAnonymously } = useAuth();
+  const { user, profile, loading, profileLoading, signInAnonymously } = useAuth();
   const segments = useSegments();
   const router = useRouter();
   const [retrying, setRetrying] = useState(false);
 
   useEffect(() => {
+    // loading中はリダイレクトしない
     if (loading) return;
+    // profileLoading中、またはuserがあるのにprofileがnull（取得中）の場合はリダイレクトしない
+    if (profileLoading || (user && !profile)) return;
 
     const inAuthGroup = segments[0] === "(auth)";
 
@@ -44,10 +47,10 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
         router.replace("/(tabs)/");
       }
     }
-  }, [user, profile, loading, segments]);
+  }, [user, profile, loading, profileLoading, segments]);
 
-  // ローディング中の表示
-  if (loading) {
+  // ローディング中の表示（プロファイル取得中も含む）
+  if (loading || profileLoading) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#2563eb" />
