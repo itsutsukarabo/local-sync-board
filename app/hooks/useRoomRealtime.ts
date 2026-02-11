@@ -29,28 +29,61 @@ export function useRoomRealtime(roomId: string | null): UseRoomRealtimeResult {
   const dbg = (msg: string, ...args: unknown[]) =>
     console.log(`[useRoomRealtime +${Date.now() - mountTimeRef.current}ms]`, msg, ...args);
 
-  // 手動でデータを再取得する関数
+  // デバウンス用 ref
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 前回の Promise の resolve を保持（リーク防止）
+  const pendingResolveRef = useRef<(() => void) | null>(null);
+
+  // 手動でデータを再取得する関数（デバウンス300ms + タイムアウト10秒）
   const refetch = useCallback(async () => {
     if (!roomId) return;
-    try {
-      const { data, error: fetchError } = await supabase
-        .from("rooms")
-        .select("*")
-        .eq("id", roomId)
-        .single();
 
-      if (fetchError) {
-        throw fetchError;
-      }
-
-      if (data) {
-        const roomData = data as Room;
-        roomData.template = migrateTemplate(roomData.template);
-        setRoom(roomData);
-      }
-    } catch (err) {
-      console.error("Error refetching room:", err);
+    // 前回のデバウンスタイマーをクリア
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
     }
+    // 前回の Promise を即座に resolve（await している呼び出し元をハングさせない）
+    if (pendingResolveRef.current) {
+      pendingResolveRef.current();
+      pendingResolveRef.current = null;
+    }
+
+    return new Promise<void>((resolve) => {
+      pendingResolveRef.current = resolve;
+      debounceTimerRef.current = setTimeout(async () => {
+        try {
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 10_000);
+
+          const { data, error: fetchError } = await supabase
+            .from("rooms")
+            .select("*")
+            .eq("id", roomId)
+            .abortSignal(controller.signal)
+            .single();
+
+          clearTimeout(timeout);
+
+          if (fetchError) {
+            throw fetchError;
+          }
+
+          if (data) {
+            const roomData = data as Room;
+            roomData.template = migrateTemplate(roomData.template);
+            setRoom(roomData);
+          }
+        } catch (err) {
+          console.error("Error refetching room:", err);
+        } finally {
+          // このタイマーの resolve がまだ pending なら解決
+          if (pendingResolveRef.current === resolve) {
+            pendingResolveRef.current = null;
+          }
+          resolve();
+        }
+      }, 300);
+    });
   }, [roomId]);
 
   // stale closure対策: Realtimeコールバック内で常に最新のrefetchを参照

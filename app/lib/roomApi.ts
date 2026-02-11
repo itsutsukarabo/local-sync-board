@@ -66,7 +66,7 @@ function ensureSeatedPlayersHaveState(
  * 履歴を除いたスナップショットを作成（ディープコピー）
  */
 function createSnapshot(currentState: any): GameStateSnapshot {
-  const { __history__, ...rest } = currentState;
+  const { __history__, __writeId__, ...rest } = currentState;
   // ディープコピーで参照を切る
   return JSON.parse(JSON.stringify(rest)) as GameStateSnapshot;
 }
@@ -391,121 +391,149 @@ export async function transferScore(
   fromName?: string,
   toName?: string
 ): Promise<{ error: Error | null }> {
-  try {
-    // 1. 最新の current_state とテンプレートを取得（重要！通信ラグ対策）
-    const { data: room, error: fetchError } = await supabase
-      .from("rooms")
-      .select("current_state, template")
-      .eq("id", roomId)
-      .single();
+  const MAX_RETRIES = 5;
 
-    if (fetchError) {
-      throw fetchError;
-    }
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      // 1. 最新の current_state とテンプレートを取得（重要！通信ラグ対策）
+      const { data: room, error: fetchError } = await supabase
+        .from("rooms")
+        .select("current_state, template")
+        .eq("id", roomId)
+        .single();
 
-    if (!room) {
-      throw new Error("ルームが見つかりません");
-    }
-
-    // 2. 操作前のスナップショットを作成（履歴用）
-    const beforeSnapshot = createSnapshot(room.current_state);
-
-    // 3. 最新データを元に計算（全transferを一括処理）
-    const currentState = { ...room.current_state };
-
-    for (const { variable, amount } of transfers) {
-      // Potからの移動
-      if (fromId === "__pot__") {
-        if (
-          !currentState.__pot__ ||
-          (currentState.__pot__[variable] || 0) < amount
-        ) {
-          throw new Error("供託金が不足しています");
-        }
-        currentState.__pot__[variable] -= amount;
-
-        if (!currentState[toId]) {
-          throw new Error("送信先プレイヤーが見つかりません");
-        }
-        currentState[toId][variable] =
-          ((currentState[toId][variable] as number) || 0) + amount;
+      if (fetchError) {
+        throw fetchError;
       }
-      // Potへの移動
-      else if (toId === "__pot__") {
-        if (!currentState[fromId]) {
-          throw new Error("送信元プレイヤーが見つかりません");
-        }
-        const fromValue = (currentState[fromId][variable] as number) || 0;
 
-        currentState[fromId][variable] = fromValue - amount;
-
-        if (!currentState.__pot__) {
-          currentState.__pot__ = {};
-        }
-        currentState.__pot__[variable] =
-          (currentState.__pot__[variable] || 0) + amount;
+      if (!room) {
+        throw new Error("ルームが見つかりません");
       }
-      // プレイヤー間の移動
-      else {
-        if (!currentState[fromId] || !currentState[toId]) {
-          throw new Error("プレイヤーが見つかりません");
+
+      // 2. 操作前のスナップショットを作成（履歴用）
+      const beforeSnapshot = createSnapshot(room.current_state);
+
+      // 3. 最新データを元に計算（全transferを一括処理）
+      const currentState = { ...room.current_state };
+
+      for (const { variable, amount } of transfers) {
+        // Potからの移動
+        if (fromId === "__pot__") {
+          if (
+            !currentState.__pot__ ||
+            (currentState.__pot__[variable] || 0) < amount
+          ) {
+            throw new Error("供託金が不足しています");
+          }
+          currentState.__pot__[variable] -= amount;
+
+          if (!currentState[toId]) {
+            throw new Error("送信先プレイヤーが見つかりません");
+          }
+          currentState[toId][variable] =
+            ((currentState[toId][variable] as number) || 0) + amount;
         }
+        // Potへの移動
+        else if (toId === "__pot__") {
+          if (!currentState[fromId]) {
+            throw new Error("送信元プレイヤーが見つかりません");
+          }
+          const fromValue = (currentState[fromId][variable] as number) || 0;
 
-        const fromValue = (currentState[fromId][variable] as number) || 0;
+          currentState[fromId][variable] = fromValue - amount;
 
-        currentState[fromId][variable] = fromValue - amount;
-        currentState[toId][variable] =
-          ((currentState[toId][variable] as number) || 0) + amount;
+          if (!currentState.__pot__) {
+            currentState.__pot__ = {};
+          }
+          currentState.__pot__[variable] =
+            (currentState.__pot__[variable] || 0) + amount;
+        }
+        // プレイヤー間の移動
+        else {
+          if (!currentState[fromId] || !currentState[toId]) {
+            throw new Error("プレイヤーが見つかりません");
+          }
+
+          const fromValue = (currentState[fromId][variable] as number) || 0;
+
+          currentState[fromId][variable] = fromValue - amount;
+          currentState[toId][variable] =
+            ((currentState[toId][variable] as number) || 0) + amount;
+        }
       }
+
+      // 4. 履歴エントリを作成
+      const displayFromName =
+        fromName || (fromId === "__pot__" ? "供託回収" : fromId.substring(0, 8));
+      const displayToName =
+        toName || (toId === "__pot__" ? "供託" : toId.substring(0, 8));
+
+      // 変数ごとの移動内容をまとめてメッセージ化
+      const transferDetails = transfers
+        .map(({ variable, amount }) => {
+          const variableLabel =
+            room.template?.variables?.find(
+              (v: { key: string; label: string }) => v.key === variable
+            )?.label || variable;
+          return `${variableLabel} ${amount.toLocaleString()}`;
+        })
+        .join(", ");
+
+      const historyEntry: HistoryEntry = {
+        id: generateUUID(),
+        timestamp: Date.now(),
+        message: `${displayFromName} → ${displayToName}: ${transferDetails}`,
+        snapshot: beforeSnapshot,
+      };
+      // 5. 履歴配列に追加
+      const existingHistory = currentState.__history__ || [];
+      currentState.__history__ = [...existingHistory, historyEntry];
+
+      // 6. 一意の書き込みIDを付与（CAS検証用）
+      const writeId = generateUUID();
+      currentState.__writeId__ = writeId;
+
+      // 7. Supabaseに保存
+      const { error: updateError } = await supabase
+        .from("rooms")
+        .update({ current_state: currentState })
+        .eq("id", roomId);
+
+      if (updateError) {
+        throw updateError;
+      }
+
+      // 8. 書き込み後検証（最終リトライ時はスキップしてフォールバック）
+      if (attempt < MAX_RETRIES) {
+        const { data: verify } = await supabase
+          .from("rooms")
+          .select("current_state")
+          .eq("id", roomId)
+          .single();
+        if (verify?.current_state?.__writeId__ === writeId) {
+          return { error: null }; // 自分の書き込みが残っている → 成功確定
+        }
+        // 別クライアントに上書きされた → 最新stateを再取得してリトライ
+        await new Promise((r) => setTimeout(r, 100 * Math.pow(2, attempt)));
+        continue;
+      }
+
+      // フォールバック: 検証なしで成功扱い（操作は必ず適用）
+      return { error: null };
+    } catch (error) {
+      if (attempt === MAX_RETRIES) {
+        console.error("Error transferring score:", error);
+        return {
+          error:
+            error instanceof Error
+              ? error
+              : new Error("スコアの移動に失敗しました"),
+        };
+      }
+      await new Promise((r) => setTimeout(r, 100 * Math.pow(2, attempt)));
     }
-
-    // 4. 履歴エントリを作成
-    const displayFromName =
-      fromName || (fromId === "__pot__" ? "供託回収" : fromId.substring(0, 8));
-    const displayToName =
-      toName || (toId === "__pot__" ? "供託" : toId.substring(0, 8));
-
-    // 変数ごとの移動内容をまとめてメッセージ化
-    const transferDetails = transfers
-      .map(({ variable, amount }) => {
-        const variableLabel =
-          room.template?.variables?.find(
-            (v: { key: string; label: string }) => v.key === variable
-          )?.label || variable;
-        return `${variableLabel} ${amount.toLocaleString()}`;
-      })
-      .join(", ");
-
-    const historyEntry: HistoryEntry = {
-      id: generateUUID(),
-      timestamp: Date.now(),
-      message: `${displayFromName} → ${displayToName}: ${transferDetails}`,
-      snapshot: beforeSnapshot,
-    };
-    // 5. 履歴配列に追加
-    const existingHistory = currentState.__history__ || [];
-    currentState.__history__ = [...existingHistory, historyEntry];
-
-    // 6. Supabaseに保存
-    const { error: updateError } = await supabase
-      .from("rooms")
-      .update({ current_state: currentState })
-      .eq("id", roomId);
-
-    if (updateError) {
-      throw updateError;
-    }
-
-    return { error: null };
-  } catch (error) {
-    console.error("Error transferring score:", error);
-    return {
-      error:
-        error instanceof Error
-          ? error
-          : new Error("スコアの移動に失敗しました"),
-    };
   }
+  return { error: new Error("スコアの移動に失敗しました") };
 }
 
 /**
