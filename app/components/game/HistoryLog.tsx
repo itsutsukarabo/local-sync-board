@@ -3,7 +3,7 @@
  * 全操作の履歴を表示し、任意の時点への復元（タイムトラベル）を可能にする
  */
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -14,6 +14,8 @@ import {
   Modal,
 } from "react-native";
 import { HistoryEntry } from "../../types";
+
+const ONE_MINUTE = 60_000;
 
 interface HistoryLogProps {
   history: HistoryEntry[];
@@ -34,6 +36,13 @@ export default function HistoryLog({
 }: HistoryLogProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [now, setNow] = useState(Date.now());
+
+  // 10秒ごとに現在時刻を更新（古いプレビューログを消すため）
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 10_000);
+    return () => clearInterval(timer);
+  }, []);
 
   const formatTime = (timestamp: number) => {
     return new Date(timestamp).toLocaleTimeString("ja-JP", {
@@ -128,17 +137,26 @@ export default function HistoryLog({
         )}
       </View>
 
-      {/* 最新の履歴をプレビュー表示（折りたたみ時） */}
-      {!isExpanded && history.length > 0 && (
-        <View style={styles.preview}>
-          <Text style={styles.previewTime}>
-            {formatTime(history[history.length - 1].timestamp)}
-          </Text>
-          <Text style={styles.previewMessage} numberOfLines={1}>
-            {history[history.length - 1].message}
-          </Text>
-        </View>
-      )}
+      {/* 最新1分間の履歴をプレビュー表示（折りたたみ時） */}
+      {!isExpanded && history.length > 0 && (() => {
+        const recentEntries = [...history]
+          .filter((e) => now - e.timestamp < ONE_MINUTE)
+          .reverse();
+        // 1分以内のエントリがない場合は最新1件を表示
+        const entries = recentEntries.length > 0
+          ? recentEntries
+          : [history[history.length - 1]];
+        return entries.map((entry) => (
+          <View key={entry.id} style={styles.preview}>
+            <Text style={styles.previewTime}>
+              {formatTime(entry.timestamp)}
+            </Text>
+            <Text style={styles.previewMessage} numberOfLines={1}>
+              {entry.message}
+            </Text>
+          </View>
+        ));
+      })()}
 
       {/* 展開時の履歴リスト */}
       {isExpanded && (
