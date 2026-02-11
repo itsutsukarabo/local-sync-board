@@ -40,9 +40,11 @@ export default function PaymentModal({
   }, [visible, variables]);
 
   const handleAmountChange = (key: string, value: string) => {
-    // 数字のみ許可
-    const numericValue = value.replace(/[^0-9]/g, "");
-    setAmounts((prev) => ({ ...prev, [key]: numericValue }));
+    // 数字とマイナス記号を許可
+    const sanitized = value.replace(/[^0-9-]/g, "");
+    // マイナスは先頭のみ許可
+    const cleaned = sanitized.charAt(0) + sanitized.slice(1).replace(/-/g, "");
+    setAmounts((prev) => ({ ...prev, [key]: cleaned }));
   };
 
   const handleQuickAmount = (key: string, amount: number) => {
@@ -50,13 +52,13 @@ export default function PaymentModal({
   };
 
   const handleConfirm = () => {
-    // 0より大きい値を持つ変数のみtransfersに含める
+    // 0でない値を持つ変数のみtransfersに含める
     const transfers = variables
       .map((v) => ({
         variable: v.key,
         amount: parseInt(amounts[v.key] || "0", 10),
       }))
-      .filter((t) => t.amount > 0);
+      .filter((t) => t.amount !== 0);
 
     if (transfers.length === 0) {
       return;
@@ -65,10 +67,10 @@ export default function PaymentModal({
     onConfirm(transfers);
   };
 
-  // 1つ以上の変数が0より大きい値を持っているか
+  // 1つ以上の変数が0でない値を持っているか
   const hasValidAmount = variables.some((v) => {
     const amount = parseInt(amounts[v.key] || "0", 10);
-    return amount > 0;
+    return amount !== 0;
   });
 
   return (
@@ -96,7 +98,7 @@ export default function PaymentModal({
                     onChangeText={(value) =>
                       handleAmountChange(variable.key, value)
                     }
-                    keyboardType="numeric"
+                    keyboardType="numbers-and-punctuation"
                     selectTextOnFocus
                   />
                 </View>

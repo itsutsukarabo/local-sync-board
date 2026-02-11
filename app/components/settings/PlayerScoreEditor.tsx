@@ -63,11 +63,14 @@ export default function PlayerScoreEditor({
   }, [currentState, players, variables]);
 
   const handleChange = (playerId: string, variableKey: string, text: string) => {
+    // 数字とマイナス記号のみ許可（先頭のみマイナス可）
+    const sanitized = text.replace(/[^0-9-]/g, "");
+    const cleaned = sanitized.charAt(0) + sanitized.slice(1).replace(/-/g, "");
     setEditValues((prev) => ({
       ...prev,
       [playerId]: {
         ...prev[playerId],
-        [variableKey]: text,
+        [variableKey]: cleaned,
       },
     }));
   };
@@ -171,7 +174,7 @@ export default function PlayerScoreEditor({
                     onBlur={() => {
                       focusedField.current = null;
                     }}
-                    keyboardType="numeric"
+                    keyboardType="numbers-and-punctuation"
                     selectTextOnFocus
                   />
                 </View>

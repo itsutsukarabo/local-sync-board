@@ -36,12 +36,33 @@ export default function VariableEditor({
     onUpdate(updated);
   };
 
+  // 初期値の入力中テキストを管理（"-" や空欄など中間状態を許容）
+  const [initialTexts, setInitialTexts] = useState<{ [key: string]: string }>({});
+
   const handleInitialChange = (index: number, text: string) => {
+    const key = variables[index].key;
+    // 数字・マイナス記号・空欄のみ許可
+    const sanitized = text.replace(/[^0-9-]/g, "");
+    // マイナスは先頭のみ許可
+    const cleaned = sanitized.charAt(0) + sanitized.slice(1).replace(/-/g, "");
+    setInitialTexts((prev) => ({ ...prev, [key]: cleaned }));
+
+    const num = Number(cleaned);
+    if (cleaned !== "" && cleaned !== "-" && !isNaN(num)) {
+      const updated = [...variables];
+      updated[index] = { ...updated[index], initial: num };
+      onUpdate(updated);
+    }
+  };
+
+  const getInitialText = (variable: Variable): string => {
+    const text = initialTexts[variable.key];
+    // ローカルstate未設定、またはローカル値とvariable.initialが一致しない場合はvariable.initialを使用
+    if (text === undefined) return String(variable.initial);
     const num = Number(text);
-    if (text === "" || text === "-" || isNaN(num)) return;
-    const updated = [...variables];
-    updated[index] = { ...updated[index], initial: num };
-    onUpdate(updated);
+    if (!isNaN(num) && num === variable.initial) return text;
+    if (text === "-" || text === "") return text;
+    return String(variable.initial);
   };
 
   const handleDelete = (index: number) => {
@@ -139,9 +160,9 @@ export default function VariableEditor({
               <Text style={styles.inputLabel}>初期値</Text>
               <TextInput
                 style={styles.textInput}
-                value={String(variable.initial)}
+                value={getInitialText(variable)}
                 onChangeText={(text) => handleInitialChange(index, text)}
-                keyboardType="numeric"
+                keyboardType="numbers-and-punctuation"
                 placeholder="0"
               />
             </View>
