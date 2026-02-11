@@ -28,12 +28,12 @@ export default function PaymentModal({
   // 各変数の金額を管理（文字列で保持）
   const [amounts, setAmounts] = useState<{ [key: string]: string }>({});
 
-  // モーダルが開くたびに全変数を0で初期化
+  // モーダルが開くたびに全変数を空欄で初期化
   useEffect(() => {
     if (visible) {
       const initial: { [key: string]: string } = {};
       variables.forEach((v) => {
-        initial[v.key] = "0";
+        initial[v.key] = "";
       });
       setAmounts(initial);
     }
@@ -90,7 +90,9 @@ export default function PaymentModal({
                   <Text style={styles.label}>{variable.label}</Text>
                   <TextInput
                     style={styles.input}
-                    value={amounts[variable.key] || "0"}
+                    value={amounts[variable.key]}
+                    placeholder={`${variable.label}を入力`}
+                    placeholderTextColor="#9ca3af"
                     onChangeText={(value) =>
                       handleAmountChange(variable.key, value)
                     }
