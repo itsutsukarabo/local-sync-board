@@ -956,6 +956,36 @@ export async function updateTemplate(
           }
         }
       }
+
+      // 既存変数の initial 差分スライド
+      const oldVariables = room.template.variables || [];
+      for (const newVar of templateUpdate.variables) {
+        const oldVar = oldVariables.find((v: any) => v.key === newVar.key);
+        if (!oldVar) continue; // 新規追加変数はスキップ（上のロジックで処理済み）
+
+        const diff = newVar.initial - oldVar.initial;
+        if (diff === 0) continue;
+
+        // 全プレイヤーに差分適用
+        for (const playerId of playerIds) {
+          if (currentState[playerId][newVar.key] !== undefined) {
+            currentState[playerId][newVar.key] += diff;
+          }
+        }
+
+        // 履歴スナップショットにも差分適用
+        for (const entry of history) {
+          const snapshotPlayerIds = Object.keys(entry.snapshot).filter(
+            (key) => !key.startsWith("__")
+          );
+          for (const pid of snapshotPlayerIds) {
+            const ps = entry.snapshot[pid];
+            if (ps && typeof ps === "object" && (ps as any)[newVar.key] !== undefined) {
+              (ps as any)[newVar.key] += diff;
+            }
+          }
+        }
+      }
     }
 
     // 4. Supabaseに保存
