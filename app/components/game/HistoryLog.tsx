@@ -10,6 +10,7 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  Pressable,
   Alert,
   Modal,
   PanResponder,
@@ -187,17 +188,17 @@ export default function HistoryLog({
           transparent={true}
           onRequestClose={() => setIsExpanded(false)}
         >
-          <TouchableOpacity
-            style={styles.modalOverlay}
-            activeOpacity={1}
-            onPress={() => setIsExpanded(false)}
-          >
+          <View style={styles.modalOverlay}>
+            <Pressable
+              style={styles.modalBackdrop}
+              onPress={() => setIsExpanded(false)}
+            />
             <RNAnimated.View
               style={[styles.modalContent, { transform: [{ translateY }] }]}
-              {...panResponder.panHandlers}
-              onStartShouldSetResponder={() => true}
             >
-              <View style={styles.swipeHandle} />
+              <View {...panResponder.panHandlers}>
+                <View style={styles.swipeHandle} />
+              </View>
               <View style={styles.modalHeader}>
                 <Text style={styles.modalTitle}>操作履歴</Text>
                 <TouchableOpacity
@@ -258,7 +259,7 @@ export default function HistoryLog({
                 </View>
               )}
             </RNAnimated.View>
-          </TouchableOpacity>
+          </View>
         </Modal>
       )}
     </View>
@@ -346,6 +347,9 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0, 0, 0, 0.5)",
     justifyContent: "flex-end",
   },
+  modalBackdrop: {
+    flex: 1,
+  },
   modalContent: {
     backgroundColor: "#ffffff",
     borderTopLeftRadius: 20,
@@ -358,7 +362,8 @@ const styles = StyleSheet.create({
     backgroundColor: "#d1d5db",
     borderRadius: 2,
     alignSelf: "center",
-    marginTop: 8,
+    marginTop: 12,
+    marginBottom: 8,
   },
   modalHeader: {
     flexDirection: "row",

@@ -10,6 +10,7 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  Pressable,
   Modal,
   PanResponder,
   Animated as RNAnimated,
@@ -106,17 +107,17 @@ export default function SettlementHistory({
       transparent={true}
       onRequestClose={onClose}
     >
-      <TouchableOpacity
-        style={styles.modalOverlay}
-        activeOpacity={1}
-        onPress={onClose}
-      >
+      <View style={styles.modalOverlay}>
+        <Pressable
+          style={styles.modalBackdrop}
+          onPress={onClose}
+        />
         <RNAnimated.View
           style={[styles.modalContent, { transform: [{ translateY }] }]}
-          {...panResponder.panHandlers}
-          onStartShouldSetResponder={() => true}
         >
-          <View style={styles.swipeHandle} />
+          <View {...panResponder.panHandlers}>
+            <View style={styles.swipeHandle} />
+          </View>
           {/* ヘッダー */}
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>精算履歴</Text>
@@ -237,7 +238,7 @@ export default function SettlementHistory({
             </View>
           )}
         </RNAnimated.View>
-      </TouchableOpacity>
+      </View>
     </Modal>
   );
 }
@@ -247,6 +248,9 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "rgba(0, 0, 0, 0.5)",
     justifyContent: "flex-end",
+  },
+  modalBackdrop: {
+    flex: 1,
   },
   modalContent: {
     backgroundColor: "#ffffff",
@@ -260,7 +264,8 @@ const styles = StyleSheet.create({
     backgroundColor: "#d1d5db",
     borderRadius: 2,
     alignSelf: "center",
-    marginTop: 8,
+    marginTop: 12,
+    marginBottom: 8,
   },
   modalHeader: {
     flexDirection: "row",
