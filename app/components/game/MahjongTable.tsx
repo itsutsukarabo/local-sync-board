@@ -38,6 +38,7 @@ interface MahjongTableProps {
   isPotEnabled?: boolean;
   potActions?: PotAction[];
   connectionStatuses?: Map<string, ConnectionStatus>;
+  isProcessing?: boolean;
 }
 
 interface DragState {
@@ -62,6 +63,7 @@ export default function MahjongTable({
   isPotEnabled = true,
   potActions = [],
   connectionStatuses,
+  isProcessing = false,
 }: MahjongTableProps) {
   const containerRef = React.useRef<View>(null);
   const [containerOffset, setContainerOffset] = React.useState({ x: 0, y: 0 });
@@ -166,6 +168,7 @@ export default function MahjongTable({
   }, [isUserSeated]); // 座席状態が変わったときも再測定
 
   const handleDragStart = (playerId: string, x: number, y: number) => {
+    if (isProcessing) return; // 処理中はドラッグ不可
     // ドラッグ開始時にコンテナ位置を再測定（スクロール対応）
     if (containerRef.current) {
       containerRef.current.measureInWindow((containerX, containerY) => {
@@ -469,6 +472,7 @@ export default function MahjongTable({
           onClose={() => setPaymentModal(null)}
           onConfirm={handlePaymentConfirm}
           variables={variables}
+          isProcessing={isProcessing}
         />
       )}
 

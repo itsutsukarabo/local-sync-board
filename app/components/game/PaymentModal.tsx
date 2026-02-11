@@ -15,6 +15,7 @@ interface PaymentModalProps {
   onClose: () => void;
   onConfirm: (transfers: { variable: string; amount: number }[]) => void;
   variables: Variable[];
+  isProcessing?: boolean;
 }
 
 export default function PaymentModal({
@@ -22,6 +23,7 @@ export default function PaymentModal({
   onClose,
   onConfirm,
   variables,
+  isProcessing = false,
 }: PaymentModalProps) {
   // 各変数の金額を管理（文字列で保持）
   const [amounts, setAmounts] = useState<{ [key: string]: string }>({});
@@ -131,18 +133,18 @@ export default function PaymentModal({
               style={[
                 styles.button,
                 styles.confirmButton,
-                !hasValidAmount && styles.confirmButtonDisabled,
+                (!hasValidAmount || isProcessing) && styles.confirmButtonDisabled,
               ]}
               onPress={handleConfirm}
-              disabled={!hasValidAmount}
+              disabled={!hasValidAmount || isProcessing}
             >
               <Text
                 style={[
                   styles.confirmButtonText,
-                  !hasValidAmount && styles.confirmButtonTextDisabled,
+                  (!hasValidAmount || isProcessing) && styles.confirmButtonTextDisabled,
                 ]}
               >
-                支払う
+                {isProcessing ? "処理中..." : "支払う"}
               </Text>
             </TouchableOpacity>
           </View>

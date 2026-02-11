@@ -61,6 +61,7 @@ export default function GameScreen() {
 
   const [settlementHistoryVisible, setSettlementHistoryVisible] = useState(false);
   const [adjustmentModalVisible, setAdjustmentModalVisible] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
 
   console.log("[GameScreen render]", { id, loading, hasRoom: !!room, hasError: !!error, hasUser: !!user });
 
@@ -221,7 +222,8 @@ export default function GameScreen() {
     toId: string,
     transfers: { variable: string; amount: number }[]
   ) => {
-    if (!room) return;
+    if (!room || isProcessing) return;
+    setIsProcessing(true);
 
     // 履歴ログ用に表示名を取得
     const getDisplayName = (id: string): string | undefined => {
@@ -246,6 +248,8 @@ export default function GameScreen() {
     } catch (error) {
       console.error("Error transferring score:", error);
       Alert.alert("エラー", "スコアの移動に失敗しました");
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -633,6 +637,7 @@ export default function GameScreen() {
               isPotEnabled={isPotEnabled}
               potActions={room.template.potActions || []}
               connectionStatuses={connectionStatuses}
+              isProcessing={isProcessing}
             />
           </View>
 
