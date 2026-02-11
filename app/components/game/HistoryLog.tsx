@@ -3,7 +3,7 @@
  * 全操作の履歴を表示し、任意の時点への復元（タイムトラベル）を可能にする
  */
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -12,6 +12,8 @@ import {
   TouchableOpacity,
   Alert,
   Modal,
+  PanResponder,
+  Animated as RNAnimated,
 } from "react-native";
 import { HistoryEntry } from "../../types";
 
@@ -37,6 +39,25 @@ export default function HistoryLog({
   const [isExpanded, setIsExpanded] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [now, setNow] = useState(Date.now());
+  const translateY = useRef(new RNAnimated.Value(0)).current;
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_, g) => g.dy > 10 && Math.abs(g.dy) > Math.abs(g.dx),
+      onPanResponderMove: (_, g) => {
+        if (g.dy > 0) translateY.setValue(g.dy);
+      },
+      onPanResponderRelease: (_, g) => {
+        if (g.dy > 80) {
+          setIsExpanded(false);
+          translateY.setValue(0);
+        } else {
+          RNAnimated.spring(translateY, { toValue: 0, useNativeDriver: true }).start();
+        }
+      },
+    })
+  ).current;
 
   // 10秒ごとに現在時刻を更新（古いプレビューログを消すため）
   useEffect(() => {
@@ -166,8 +187,17 @@ export default function HistoryLog({
           transparent={true}
           onRequestClose={() => setIsExpanded(false)}
         >
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalContent}>
+          <TouchableOpacity
+            style={styles.modalOverlay}
+            activeOpacity={1}
+            onPress={() => setIsExpanded(false)}
+          >
+            <RNAnimated.View
+              style={[styles.modalContent, { transform: [{ translateY }] }]}
+              {...panResponder.panHandlers}
+              onStartShouldSetResponder={() => true}
+            >
+              <View style={styles.swipeHandle} />
               <View style={styles.modalHeader}>
                 <Text style={styles.modalTitle}>操作履歴</Text>
                 <TouchableOpacity
@@ -227,8 +257,8 @@ export default function HistoryLog({
                   </Text>
                 </View>
               )}
-            </View>
-          </View>
+            </RNAnimated.View>
+          </TouchableOpacity>
         </Modal>
       )}
     </View>
@@ -321,6 +351,14 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     maxHeight: "70%",
+  },
+  swipeHandle: {
+    width: 36,
+    height: 4,
+    backgroundColor: "#d1d5db",
+    borderRadius: 2,
+    alignSelf: "center",
+    marginTop: 8,
   },
   modalHeader: {
     flexDirection: "row",

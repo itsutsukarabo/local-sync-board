@@ -3,7 +3,7 @@
  * 過去の精算結果を表形式で表示するModal
  */
 
-import React from "react";
+import React, { useRef } from "react";
 import {
   View,
   Text,
@@ -11,6 +11,8 @@ import {
   ScrollView,
   TouchableOpacity,
   Modal,
+  PanResponder,
+  Animated as RNAnimated,
 } from "react-native";
 import { Settlement } from "../../types";
 
@@ -41,6 +43,26 @@ export default function SettlementHistory({
   isHost,
   onAddAdjustment,
 }: SettlementHistoryProps) {
+  const translateY = useRef(new RNAnimated.Value(0)).current;
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_, g) => g.dy > 10 && Math.abs(g.dy) > Math.abs(g.dx),
+      onPanResponderMove: (_, g) => {
+        if (g.dy > 0) translateY.setValue(g.dy);
+      },
+      onPanResponderRelease: (_, g) => {
+        if (g.dy > 80) {
+          onClose();
+          translateY.setValue(0);
+        } else {
+          RNAnimated.spring(translateY, { toValue: 0, useNativeDriver: true }).start();
+        }
+      },
+    })
+  ).current;
+
   if (!visible) return null;
 
   // 全settlementからプレイヤー列を集約（出現順を維持）
@@ -84,8 +106,17 @@ export default function SettlementHistory({
       transparent={true}
       onRequestClose={onClose}
     >
-      <View style={styles.modalOverlay}>
-        <View style={styles.modalContent}>
+      <TouchableOpacity
+        style={styles.modalOverlay}
+        activeOpacity={1}
+        onPress={onClose}
+      >
+        <RNAnimated.View
+          style={[styles.modalContent, { transform: [{ translateY }] }]}
+          {...panResponder.panHandlers}
+          onStartShouldSetResponder={() => true}
+        >
+          <View style={styles.swipeHandle} />
           {/* ヘッダー */}
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>精算履歴</Text>
@@ -205,8 +236,8 @@ export default function SettlementHistory({
               </TouchableOpacity>
             </View>
           )}
-        </View>
-      </View>
+        </RNAnimated.View>
+      </TouchableOpacity>
     </Modal>
   );
 }
@@ -222,6 +253,14 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     maxHeight: "70%",
+  },
+  swipeHandle: {
+    width: 36,
+    height: 4,
+    backgroundColor: "#d1d5db",
+    borderRadius: 2,
+    alignSelf: "center",
+    marginTop: 8,
   },
   modalHeader: {
     flexDirection: "row",
