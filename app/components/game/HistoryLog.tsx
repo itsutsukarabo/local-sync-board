@@ -16,6 +16,7 @@ import {
   PanResponder,
   Animated as RNAnimated,
 } from "react-native";
+import { useRouter } from "expo-router";
 import { HistoryEntry } from "../../types";
 
 const ONE_MINUTE = 60_000;
@@ -26,7 +27,7 @@ interface HistoryLogProps {
   onUndo: () => Promise<void>;
   isHost: boolean;
   settlementCount?: number;
-  onOpenSettlementHistory?: () => void;
+  roomId?: string;
 }
 
 export default function HistoryLog({
@@ -35,8 +36,9 @@ export default function HistoryLog({
   onUndo,
   isHost,
   settlementCount,
-  onOpenSettlementHistory,
+  roomId,
 }: HistoryLogProps) {
+  const router = useRouter();
   const [isExpanded, setIsExpanded] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [now, setNow] = useState(Date.now());
@@ -138,12 +140,12 @@ export default function HistoryLog({
         </TouchableOpacity>
 
         {/* 精算履歴ボタン */}
-        {(settlementCount ?? 0) > 0 && onOpenSettlementHistory && (
+        {(settlementCount ?? 0) > 0 && roomId && (
           <TouchableOpacity
             style={styles.settlementButton}
-            onPress={onOpenSettlementHistory}
+            onPress={() => router.push(`/game/settlement/${roomId}`)}
           >
-            <Text style={styles.settlementButtonText}>📊</Text>
+            <Text style={styles.settlementButtonText}>結果一覧→</Text>
           </TouchableOpacity>
         )}
 
@@ -309,7 +311,9 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   settlementButtonText: {
-    fontSize: 16,
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#7c3aed",
   },
   undoButton: {
     backgroundColor: "#f59e0b",

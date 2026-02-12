@@ -116,6 +116,10 @@ export default function RootLayout() {
               name="game/[id]"
               options={{ gestureEnabled: false }}
             />
+            <Stack.Screen
+              name="game/settlement/[id]"
+              options={{ gestureEnabled: false }}
+            />
           </Stack>
         </AuthGuard>
       </AuthProvider>

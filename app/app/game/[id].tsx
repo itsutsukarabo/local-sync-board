@@ -23,8 +23,6 @@ import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import PlayerList from "../../components/game/PlayerList";
 import MahjongTable from "../../components/game/MahjongTable";
 import HistoryLog from "../../components/game/HistoryLog";
-import SettlementHistory from "../../components/game/SettlementHistory";
-import AdjustmentModal from "../../components/game/AdjustmentModal";
 import Toast from "../../components/common/Toast";
 import { useToast } from "../../hooks/useToast";
 import {
@@ -40,7 +38,6 @@ import {
   rollbackTo,
   undoLast,
   saveSettlement,
-  saveAdjustment,
 } from "../../lib/roomApi";
 import { HistoryEntry, Settlement } from "../../types";
 import { supabase } from "../../lib/supabase";
@@ -61,8 +58,6 @@ export default function GameScreen() {
     room?.template?.forceLeaveTimeoutSec,
   );
 
-  const [settlementHistoryVisible, setSettlementHistoryVisible] = useState(false);
-  const [adjustmentModalVisible, setAdjustmentModalVisible] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const { toasts, show: showToast, dismiss: dismissToast } = useToast();
 
@@ -493,38 +488,18 @@ export default function GameScreen() {
     ]);
   };
 
-  // 調整行追加ハンドラー
-  const handleAddAdjustment = async (settlement: Settlement) => {
-    if (!room) return;
-
-    try {
-      const { error } = await saveAdjustment(room.id, settlement);
-
-      if (error) {
-        showToast("error", error.message);
-        return;
-      }
-
-      setAdjustmentModalVisible(false);
-      await refetch();
-    } catch (error) {
-      console.error("Error saving adjustment:", error);
-      showToast("error", "調整の保存に失敗しました");
-    }
-  };
-
   // 履歴を取得
   const history: HistoryEntry[] = room?.current_state?.__history__ || [];
 
   // 精算履歴を取得
   const settlements: Settlement[] = room?.current_state?.__settlements__ || [];
 
-  // 左スワイプで精算履歴を開くジェスチャー
+  // 右スワイプで精算履歴ページに遷移
   const swipeGesture = Gesture.Pan()
-    .activeOffsetX(-30)
+    .activeOffsetX(30)
     .onEnd((event) => {
-      if (event.translationX < -50) {
-        setSettlementHistoryVisible(true);
+      if (event.translationX > 50) {
+        router.push(`/game/settlement/${room.id}`);
       }
     })
     .runOnJS(true);
@@ -532,48 +507,6 @@ export default function GameScreen() {
   return (
     <GestureDetector gesture={swipeGesture}>
     <SafeAreaView style={styles.container}>
-      {/* 精算履歴Modal */}
-      <SettlementHistory
-        settlements={settlements}
-        visible={settlementHistoryVisible}
-        onClose={() => setSettlementHistoryVisible(false)}
-        isHost={isHost}
-        onAddAdjustment={() => {
-          setSettlementHistoryVisible(false);
-          setAdjustmentModalVisible(true);
-        }}
-      />
-
-      {/* 調整行入力Modal */}
-      <AdjustmentModal
-        visible={adjustmentModalVisible}
-        onClose={() => setAdjustmentModalVisible(false)}
-        onConfirm={handleAddAdjustment}
-        players={
-          // 全settlementsからプレイヤー列を集約（出現順を維持）、なければseatsから
-          settlements.length > 0
-            ? (() => {
-                const players: { userId: string; displayName: string }[] = [];
-                const seenUserIds = new Set<string>();
-                for (const s of settlements) {
-                  for (const [userId, pr] of Object.entries(s.playerResults)) {
-                    if (!seenUserIds.has(userId)) {
-                      seenUserIds.add(userId);
-                      players.push({ userId, displayName: pr.displayName });
-                    }
-                  }
-                }
-                return players;
-              })()
-            : (room.seats || [])
-                .filter((s): s is NonNullable<typeof s> => s !== null && s.userId !== null)
-                .map((s) => ({
-                  userId: s.userId!,
-                  displayName: s.displayName || s.userId!.substring(0, 8),
-                }))
-        }
-      />
-
       {/* ヘッダー */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
@@ -603,7 +536,7 @@ export default function GameScreen() {
         onUndo={handleUndo}
         isHost={isHost}
         settlementCount={settlements.length}
-        onOpenSettlementHistory={() => setSettlementHistoryVisible(true)}
+        roomId={room.id}
       />
 
       {/* メインコンテンツ */}

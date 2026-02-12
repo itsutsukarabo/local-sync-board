@@ -1,26 +1,20 @@
 /**
  * 精算履歴テーブルコンポーネント
- * 過去の精算結果を表形式で表示するModal
+ * 過去の精算結果を表形式で表示する
  */
 
-import React, { useRef } from "react";
+import React from "react";
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Pressable,
-  Modal,
-  PanResponder,
-  Animated as RNAnimated,
 } from "react-native";
 import { Settlement } from "../../types";
 
 interface SettlementHistoryProps {
   settlements: Settlement[];
-  visible: boolean;
-  onClose: () => void;
   isHost?: boolean;
   onAddAdjustment?: () => void;
 }
@@ -39,33 +33,9 @@ function formatResult(value: number): string {
 
 export default function SettlementHistory({
   settlements,
-  visible,
-  onClose,
   isHost,
   onAddAdjustment,
 }: SettlementHistoryProps) {
-  const translateY = useRef(new RNAnimated.Value(0)).current;
-
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => false,
-      onMoveShouldSetPanResponder: (_, g) => g.dy > 10 && Math.abs(g.dy) > Math.abs(g.dx),
-      onPanResponderMove: (_, g) => {
-        if (g.dy > 0) translateY.setValue(g.dy);
-      },
-      onPanResponderRelease: (_, g) => {
-        if (g.dy > 80) {
-          onClose();
-          translateY.setValue(0);
-        } else {
-          RNAnimated.spring(translateY, { toValue: 0, useNativeDriver: true }).start();
-        }
-      },
-    })
-  ).current;
-
-  if (!visible) return null;
-
   // 全settlementからプレイヤー列を集約（出現順を維持）
   const playerColumns: PlayerColumn[] = [];
   const seenUserIds = new Set<string>();
@@ -100,133 +70,107 @@ export default function SettlementHistory({
     return { label: `半荘${hanchanIndex}`, settlement: s };
   });
 
-  return (
-    <Modal
-      visible={visible}
-      animationType="slide"
-      transparent={true}
-      onRequestClose={onClose}
-    >
-      <View style={styles.modalOverlay}>
-        <Pressable
-          style={styles.modalBackdrop}
-          onPress={onClose}
-        />
-        <RNAnimated.View
-          style={[styles.modalContent, { transform: [{ translateY }] }]}
-        >
-          <View {...panResponder.panHandlers}>
-            <View style={styles.swipeHandle} />
-          </View>
-          {/* ヘッダー */}
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>精算履歴</Text>
-            <TouchableOpacity style={styles.closeButton} onPress={onClose}>
-              <Text style={styles.closeButtonText}>✕</Text>
+  if (settlements.length === 0) {
+    return (
+      <View>
+        <View style={styles.emptyState}>
+          <Text style={styles.emptyText}>精算履歴がありません</Text>
+        </View>
+        {isHost && onAddAdjustment && (
+          <View style={styles.emptyAddAdjustment}>
+            <TouchableOpacity
+              style={styles.addAdjustmentButton}
+              onPress={onAddAdjustment}
+            >
+              <Text style={styles.addAdjustmentButtonText}>
+                + 調整を追加
+              </Text>
             </TouchableOpacity>
           </View>
+        )}
+      </View>
+    );
+  }
 
-          {settlements.length === 0 ? (
-            <View style={styles.emptyState}>
-              <Text style={styles.emptyText}>精算履歴がありません</Text>
+  return (
+    <ScrollView style={styles.tableScrollVertical}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={true}>
+        <View>
+          {/* テーブルヘッダー */}
+          <View style={styles.tableRow}>
+            <View style={[styles.tableCell, styles.labelCell]}>
+              <Text style={styles.headerText}> </Text>
             </View>
-          ) : (
-            <ScrollView style={styles.tableScrollVertical}>
-              <ScrollView horizontal showsHorizontalScrollIndicator={true}>
-                <View>
-                  {/* テーブルヘッダー */}
-                  <View style={styles.tableRow}>
-                    <View style={[styles.tableCell, styles.labelCell]}>
-                      <Text style={styles.headerText}> </Text>
-                    </View>
-                    {playerColumns.map((col) => (
-                      <View
-                        key={col.userId}
-                        style={[styles.tableCell, styles.headerCell]}
-                      >
-                        <Text style={styles.headerText} numberOfLines={1}>
-                          {col.displayName}
-                        </Text>
-                      </View>
-                    ))}
-                  </View>
+            {playerColumns.map((col) => (
+              <View
+                key={col.userId}
+                style={[styles.tableCell, styles.headerCell]}
+              >
+                <Text style={styles.headerText} numberOfLines={1}>
+                  {col.displayName}
+                </Text>
+              </View>
+            ))}
+          </View>
 
-                  {/* データ行 */}
-                  {rows.map((row, index) => (
-                    <View
-                      key={row.settlement.id}
+          {/* データ行 */}
+          {rows.map((row, index) => (
+            <View
+              key={row.settlement.id}
+              style={[
+                styles.tableRow,
+                index % 2 === 1 && styles.tableRowAlt,
+              ]}
+            >
+              <View style={[styles.tableCell, styles.labelCell]}>
+                <Text style={styles.labelText}>{row.label}</Text>
+              </View>
+              {playerColumns.map((col) => {
+                const pr =
+                  row.settlement.playerResults[col.userId];
+                const value = pr?.result ?? 0;
+                return (
+                  <View key={col.userId} style={styles.tableCell}>
+                    <Text
                       style={[
-                        styles.tableRow,
-                        index % 2 === 1 && styles.tableRowAlt,
+                        styles.valueText,
+                        value > 0 && styles.valuePositive,
+                        value < 0 && styles.valueNegative,
                       ]}
                     >
-                      <View style={[styles.tableCell, styles.labelCell]}>
-                        <Text style={styles.labelText}>{row.label}</Text>
-                      </View>
-                      {playerColumns.map((col) => {
-                        const pr =
-                          row.settlement.playerResults[col.userId];
-                        const value = pr?.result ?? 0;
-                        return (
-                          <View key={col.userId} style={styles.tableCell}>
-                            <Text
-                              style={[
-                                styles.valueText,
-                                value > 0 && styles.valuePositive,
-                                value < 0 && styles.valueNegative,
-                              ]}
-                            >
-                              {pr ? formatResult(value) : "-"}
-                            </Text>
-                          </View>
-                        );
-                      })}
-                    </View>
-                  ))}
-
-                  {/* 合計行 */}
-                  <View style={[styles.tableRow, styles.totalRow]}>
-                    <View style={[styles.tableCell, styles.labelCell]}>
-                      <Text style={styles.totalLabelText}>合計</Text>
-                    </View>
-                    {playerColumns.map((col) => {
-                      const value = totals[col.userId] || 0;
-                      return (
-                        <View key={col.userId} style={styles.tableCell}>
-                          <Text
-                            style={[
-                              styles.totalValueText,
-                              value > 0 && styles.valuePositive,
-                              value < 0 && styles.valueNegative,
-                            ]}
-                          >
-                            {formatResult(value)}
-                          </Text>
-                        </View>
-                      );
-                    })}
+                      {pr ? formatResult(value) : "-"}
+                    </Text>
                   </View>
-                  {/* ホスト用：調整を追加ボタン */}
-                  {isHost && onAddAdjustment && (
-                    <View style={styles.addAdjustmentRow}>
-                      <TouchableOpacity
-                        style={styles.addAdjustmentButton}
-                        onPress={onAddAdjustment}
-                      >
-                        <Text style={styles.addAdjustmentButtonText}>
-                          + 調整を追加
-                        </Text>
-                      </TouchableOpacity>
-                    </View>
-                  )}
-                </View>
-              </ScrollView>
-            </ScrollView>
-          )}
+                );
+              })}
+            </View>
+          ))}
 
-          {/* 精算履歴が空でもホストなら調整追加ボタンを表示 */}
-          {settlements.length === 0 && isHost && onAddAdjustment && (
-            <View style={styles.emptyAddAdjustment}>
+          {/* 合計行 */}
+          <View style={[styles.tableRow, styles.totalRow]}>
+            <View style={[styles.tableCell, styles.labelCell]}>
+              <Text style={styles.totalLabelText}>合計</Text>
+            </View>
+            {playerColumns.map((col) => {
+              const value = totals[col.userId] || 0;
+              return (
+                <View key={col.userId} style={styles.tableCell}>
+                  <Text
+                    style={[
+                      styles.totalValueText,
+                      value > 0 && styles.valuePositive,
+                      value < 0 && styles.valueNegative,
+                    ]}
+                  >
+                    {formatResult(value)}
+                  </Text>
+                </View>
+              );
+            })}
+          </View>
+          {/* ホスト用：調整を追加ボタン */}
+          {isHost && onAddAdjustment && (
+            <View style={styles.addAdjustmentRow}>
               <TouchableOpacity
                 style={styles.addAdjustmentButton}
                 onPress={onAddAdjustment}
@@ -237,56 +181,13 @@ export default function SettlementHistory({
               </TouchableOpacity>
             </View>
           )}
-        </RNAnimated.View>
-      </View>
-    </Modal>
+        </View>
+      </ScrollView>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
-    justifyContent: "flex-end",
-  },
-  modalBackdrop: {
-    flex: 1,
-  },
-  modalContent: {
-    backgroundColor: "#ffffff",
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    maxHeight: "70%",
-  },
-  swipeHandle: {
-    width: 36,
-    height: 4,
-    backgroundColor: "#d1d5db",
-    borderRadius: 2,
-    alignSelf: "center",
-    marginTop: 12,
-    marginBottom: 8,
-  },
-  modalHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "#e5e7eb",
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: "#1f2937",
-  },
-  closeButton: {
-    padding: 4,
-  },
-  closeButtonText: {
-    fontSize: 20,
-    color: "#6b7280",
-  },
   emptyState: {
     padding: 40,
     alignItems: "center",
