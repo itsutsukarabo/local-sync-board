@@ -167,23 +167,28 @@ function SettingsContent({
     <SafeAreaView style={styles.container}>
       {/* ヘッダー */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
+        <TouchableOpacity onPress={() => {
+          if (hasChanges) {
+            Alert.alert("確認", "変更が保存されていません。保存せずに戻りますか？", [
+              { text: "キャンセル", style: "cancel" },
+              { text: "保存せず戻る", style: "destructive", onPress: () => router.back() },
+            ]);
+          } else {
+            router.back();
+          }
+        }}>
           <Text style={styles.headerBack}>← 戻る</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>ルーム設定</Text>
-        {hasChanges ? (
-          <TouchableOpacity
-            style={[styles.saveBtn, saving && styles.saveBtnDisabled]}
-            onPress={handleSave}
-            disabled={saving}
-          >
-            <Text style={styles.saveBtnText}>
-              {saving ? "保存中..." : "保存"}
-            </Text>
-          </TouchableOpacity>
-        ) : (
-          <View style={styles.headerSpacer} />
-        )}
+        <TouchableOpacity
+          style={[styles.saveBtn, (!hasChanges || saving) && styles.saveBtnDisabled]}
+          onPress={handleSave}
+          disabled={!hasChanges || saving}
+        >
+          <Text style={styles.saveBtnText}>
+            {saving ? "保存中..." : "保存"}
+          </Text>
+        </TouchableOpacity>
       </View>
 
       <ScrollView
@@ -351,9 +356,6 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     color: "#1f2937",
   },
-  headerSpacer: {
-    width: 60,
-  },
   saveBtn: {
     backgroundColor: "#3b82f6",
     paddingHorizontal: 16,
@@ -361,7 +363,7 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   saveBtnDisabled: {
-    opacity: 0.5,
+    backgroundColor: "#d1d5db",
   },
   saveBtnText: {
     color: "#ffffff",

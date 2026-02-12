@@ -85,7 +85,7 @@ export default function PlayerScoreEditor({
     });
   };
 
-  const handleSave = async (playerId: string) => {
+  const handleSave = async (playerId: string, playerDisplayName: string) => {
     const playerEdits = editValues[playerId];
     if (!playerEdits) return;
 
@@ -109,7 +109,7 @@ export default function PlayerScoreEditor({
 
     setSavingPlayer(playerId);
     try {
-      const { error } = await forceEditScore(roomId, playerId, updates);
+      const { error } = await forceEditScore(roomId, playerId, updates, playerDisplayName);
       if (error) {
         Alert.alert("エラー", error.message);
       } else {
@@ -147,7 +147,7 @@ export default function PlayerScoreEditor({
                   styles.updateBtn,
                   (!changed || isSaving) && styles.updateBtnDisabled,
                 ]}
-                onPress={() => handleSave(playerId)}
+                onPress={() => handleSave(playerId, baseName)}
                 disabled={!changed || isSaving}
               >
                 <Text

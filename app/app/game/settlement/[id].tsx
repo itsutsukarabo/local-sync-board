@@ -78,6 +78,17 @@ export default function SettlementScreen() {
     }
   };
 
+  // userIdから最新の表示名を取得するヘルパー
+  const getLatestDisplayName = (userId: string, fallback: string): string => {
+    const seatInfo = (room?.seats || []).find(
+      (s: any) => s && s.userId === userId
+    );
+    if (seatInfo?.displayName) return seatInfo.displayName;
+    const stateDisplayName = room?.current_state?.[userId]?.__displayName__ as string | undefined;
+    if (stateDisplayName) return stateDisplayName;
+    return fallback;
+  };
+
   // プレイヤー一覧（AdjustmentModal用）
   const adjustmentPlayers =
     settlements.length > 0
@@ -88,7 +99,7 @@ export default function SettlementScreen() {
             for (const [userId, pr] of Object.entries(s.playerResults)) {
               if (!seenUserIds.has(userId)) {
                 seenUserIds.add(userId);
-                players.push({ userId, displayName: pr.displayName });
+                players.push({ userId, displayName: getLatestDisplayName(userId, pr.displayName) });
               }
             }
           }
@@ -103,14 +114,17 @@ export default function SettlementScreen() {
             displayName: s.displayName || s.userId!.substring(0, 8),
           }));
 
-  // 全settlementからプレイヤー列を集約（出現順を維持）
+  // 全settlementからプレイヤー列を集約（出現順を維持、最新名を使用）
   const playerColumns: PlayerColumn[] = [];
   const seenUserIds = new Set<string>();
   for (const s of settlements) {
     for (const [userId, pr] of Object.entries(s.playerResults)) {
       if (!seenUserIds.has(userId)) {
         seenUserIds.add(userId);
-        playerColumns.push({ userId, displayName: pr.displayName });
+        playerColumns.push({
+          userId,
+          displayName: getLatestDisplayName(userId, pr.displayName),
+        });
       }
     }
   }

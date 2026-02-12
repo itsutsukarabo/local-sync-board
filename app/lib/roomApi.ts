@@ -701,6 +701,8 @@ export async function joinSeat(
       });
       currentState[user.id] = initialState;
     }
+    // displayNameを保存（離席後も名前を表示するため）
+    currentState[user.id].__displayName__ = displayName;
 
     // ルームの状態を更新
     const { data: updateData, error: updateError } = await supabase
@@ -1018,11 +1020,13 @@ export async function updateTemplate(
  * @param roomId - ルームID
  * @param playerId - 対象プレイヤーのID
  * @param updates - 上書きする変数と値のマップ
+ * @param displayName - 履歴に表示するプレイヤー名
  */
 export async function forceEditScore(
   roomId: string,
   playerId: string,
-  updates: Record<string, number>
+  updates: Record<string, number>,
+  displayName?: string
 ): Promise<{ error: Error | null }> {
   try {
     // 1. 最新の current_state とテンプレートを取得
@@ -1068,7 +1072,7 @@ export async function forceEditScore(
     const historyEntry: HistoryEntry = {
       id: generateUUID(),
       timestamp: Date.now(),
-      message: `✏️ 強制編集: ${playerId.substring(0, 8)} - ${details}`,
+      message: `✏️ 強制編集: ${displayName || playerId.substring(0, 8)} - ${details}`,
       snapshot: beforeSnapshot,
     };
 
