@@ -49,7 +49,7 @@ export default function RoomSettingsScreen() {
       <SafeAreaView style={styles.container}>
         <View style={styles.centerContent}>
           <Text style={styles.errorText}>ルームが見つかりません</Text>
-          <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+          <TouchableOpacity style={styles.backBtn} onPress={() => router.canGoBack() ? router.back() : router.replace("/")}>
             <Text style={styles.backBtnText}>戻る</Text>
           </TouchableOpacity>
         </View>

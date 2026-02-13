@@ -136,7 +136,7 @@ export default function GameScreen() {
       <SafeAreaView style={styles.container}>
         <View style={styles.centerContent}>
           <Text style={styles.errorText}>ルームが見つかりません</Text>
-          <TouchableOpacity style={styles.button} onPress={() => router.back()}>
+          <TouchableOpacity style={styles.button} onPress={() => router.canGoBack() ? router.back() : router.replace("/")}>
             <Text style={styles.buttonText}>戻る</Text>
           </TouchableOpacity>
         </View>
