@@ -25,8 +25,8 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     // loading中はリダイレクトしない
     if (loading) return;
-    // profileLoading中、またはuserがあるのにprofileがnull（取得中）の場合はリダイレクトしない
-    if (profileLoading || (user && !profile)) return;
+    // profileLoading中はリダイレクトしない（取得完了を待つ）
+    if (profileLoading) return;
 
     const inAuthGroup = segments[0] === "(auth)";
 

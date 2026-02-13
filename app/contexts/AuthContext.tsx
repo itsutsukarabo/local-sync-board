@@ -127,10 +127,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setSession(currentSession);
           setUser(currentSession.user);
 
-          // プロファイルを取得
-          const profileData = await fetchProfile(currentSession.user.id);
-          if (mounted) {
-            setProfile(profileData);
+          // プロファイルを取得（タイムアウト付き）
+          try {
+            const profileData = await withTimeout(
+              fetchProfile(currentSession.user.id),
+              AUTH_TIMEOUT_MS,
+              "プロファイル取得(init)"
+            );
+            if (mounted) setProfile(profileData);
+          } catch (e) {
+            dbg("initializeAuth: profile fetch failed/timeout:", e);
+            if (mounted) setProfile(null);
           }
         } else {
           // セッションがない場合は匿名ログインを実行（タイムアウト付き）
@@ -149,10 +156,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setUser(data.user);
             setSession(data.session);
 
-            // リトライ付きでプロファイルを取得（トリガー遅延対策）
-            const profileData = await fetchProfileWithRetry(data.user.id);
-            if (mounted) {
-              setProfile(profileData);
+            // リトライ付きでプロファイルを取得（トリガー遅延対策、タイムアウト付き）
+            try {
+              const profileData = await withTimeout(
+                fetchProfileWithRetry(data.user.id),
+                AUTH_TIMEOUT_MS,
+                "プロファイル取得(anon)"
+              );
+              if (mounted) setProfile(profileData);
+            } catch (e) {
+              dbg("initializeAuth: profile fetch after anon login failed/timeout:", e);
+              if (mounted) setProfile(null);
             }
           }
         }
@@ -186,7 +200,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // 認証状態の変更を監視
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (event, currentSession) => {
+    } = supabase.auth.onAuthStateChange((event, currentSession) => {
       dbg("onAuthStateChange fired, event:", event, "hasSession:", !!currentSession, "hasUser:", !!currentSession?.user);
 
       // getSession タイムアウト時のフォールバック用に記録
@@ -209,14 +223,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setLoading(false);
         }
 
-        // プロファイルはバックグラウンドで取得
-        dbg("onAuthStateChange: fetching profile for user", currentSession.user.id);
-        const profileData = await fetchProfileWithRetry(currentSession.user.id);
-        dbg("onAuthStateChange: profile fetched, hasProfile:", !!profileData, "displayName:", profileData?.display_name);
-        if (mounted) {
-          setProfile(profileData);
-          setProfileLoading(false);
-        }
+        // プロファイル取得は排他ロック外で実行（デッドロック防止）
+        // onAuthStateChangeコールバックは auth-js の排他ロック内で呼ばれるため、
+        // コールバック内で supabase.from().select() を呼ぶと getSession() が
+        // 同じロックを取得しようとしてデッドロックする。
+        // setTimeout(0) でコールバックを抜けてからDB問い合わせを行う。
+        const userId = currentSession.user.id;
+        setTimeout(async () => {
+          dbg("onAuthStateChange: fetching profile for user (deferred)", userId);
+          try {
+            const profileData = await withTimeout(
+              fetchProfileWithRetry(userId),
+              AUTH_TIMEOUT_MS,
+              "プロファイル取得"
+            );
+            dbg("onAuthStateChange: profile fetched, hasProfile:", !!profileData, "displayName:", profileData?.display_name);
+            if (mounted) {
+              setProfile(profileData);
+              setProfileLoading(false);
+            }
+          } catch (profileError) {
+            dbg("onAuthStateChange: profile fetch failed/timeout:", profileError);
+            if (mounted) {
+              setProfile(null);
+              setProfileLoading(false);
+            }
+          }
+        }, 0);
       } else {
         setProfile(null);
         setProfileLoading(false);
