@@ -33,6 +33,9 @@ export function useRoomRealtime(roomId: string | null): UseRoomRealtimeResult {
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // 前回の Promise の resolve を保持（リーク防止）
   const pendingResolveRef = useRef<(() => void) | null>(null);
+  // 連続 refetch 失敗カウント（一時的な通信エラーでは即座にエラー表示しない）
+  const consecutiveFailuresRef = useRef(0);
+  const REFETCH_FAILURE_THRESHOLD = 3;
 
   // 手動でデータを再取得する関数（デバウンス300ms + タイムアウト10秒）
   const refetch = useCallback(async () => {
@@ -72,9 +75,21 @@ export function useRoomRealtime(roomId: string | null): UseRoomRealtimeResult {
             const roomData = data as Room;
             roomData.template = migrateTemplate(roomData.template);
             setRoom(roomData);
+            // 成功したらエラーと失敗カウントをリセット
+            consecutiveFailuresRef.current = 0;
+            if (error) setError(null);
           }
         } catch (err) {
           console.error("Error refetching room:", err);
+          consecutiveFailuresRef.current += 1;
+          // 連続失敗が閾値を超えたらエラーをUIに反映（ただしroomはnullにしない）
+          if (consecutiveFailuresRef.current >= REFETCH_FAILURE_THRESHOLD) {
+            setError(
+              err instanceof Error
+                ? err
+                : new Error("サーバーとの通信に失敗しています")
+            );
+          }
         } finally {
           // このタイマーの resolve がまだ pending なら解決
           if (pendingResolveRef.current === resolve) {
@@ -84,7 +99,7 @@ export function useRoomRealtime(roomId: string | null): UseRoomRealtimeResult {
         }
       }, 300);
     });
-  }, [roomId]);
+  }, [roomId, error]);
 
   // stale closure対策: Realtimeコールバック内で常に最新のrefetchを参照
   const refetchRef = useRef(refetch);

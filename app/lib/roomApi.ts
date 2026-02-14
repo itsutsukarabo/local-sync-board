@@ -520,23 +520,22 @@ export async function transferScore(
         throw updateError;
       }
 
-      // 8. 書き込み後検証（最終リトライ時はスキップしてフォールバック）
+      // 8. 書き込み後検証
+      const { data: verify } = await supabase
+        .from("rooms")
+        .select("current_state")
+        .eq("id", roomId)
+        .single();
+      if (verify?.current_state?.__writeId__ === writeId) {
+        return { error: null }; // 自分の書き込みが残っている → 成功確定
+      }
+      // 別クライアントに上書きされた → 最新stateを再取得してリトライ
       if (attempt < MAX_RETRIES) {
-        const { data: verify } = await supabase
-          .from("rooms")
-          .select("current_state")
-          .eq("id", roomId)
-          .single();
-        if (verify?.current_state?.__writeId__ === writeId) {
-          return { error: null }; // 自分の書き込みが残っている → 成功確定
-        }
-        // 別クライアントに上書きされた → 最新stateを再取得してリトライ
         await new Promise((r) => setTimeout(r, 100 * Math.pow(2, attempt)));
         continue;
       }
-
-      // フォールバック: 検証なしで成功扱い（操作は必ず適用）
-      return { error: null };
+      // 最終リトライでも競合が解消されなかった → エラーを返す
+      return { error: new Error("書き込み競合が解消されませんでした。再度お試しください。") };
     } catch (error) {
       if (attempt === MAX_RETRIES) {
         console.error("Error transferring score:", error);

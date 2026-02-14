@@ -63,13 +63,29 @@ export default function GameScreen() {
   const [isProcessing, setIsProcessing] = useState(false);
   const { toasts, show: showToast, dismiss: dismissToast } = useToast();
 
-  // エラーハンドリング
+  // エラーハンドリング: 永続的エラーと一時的エラーを分類
   useEffect(() => {
-    if (error) {
+    if (!error) return;
+
+    const permanentErrors = ["ルームが削除されました", "ルームが見つかりません"];
+    const isPermanent = permanentErrors.some((msg) => error.message.includes(msg));
+
+    if (isPermanent) {
       Alert.alert("エラー", error.message, [
+        { text: "OK", onPress: () => router.back() },
+      ]);
+    } else {
+      Alert.alert("通信エラー", error.message, [
         {
-          text: "OK",
+          text: "リトライ",
+          onPress: () => {
+            refetch();
+          },
+        },
+        {
+          text: "戻る",
           onPress: () => router.back(),
+          style: "cancel",
         },
       ]);
     }
