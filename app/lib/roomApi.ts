@@ -9,7 +9,6 @@ import {
   GameTemplate,
   CreateRoomRequest,
   JoinRoomRequest,
-  HistoryEntry,
   GameStateSnapshot,
   SeatInfo,
   Settlement,
@@ -73,12 +72,47 @@ function ensureSeatedPlayersHaveState(
 }
 
 /**
- * 履歴を除いたスナップショットを作成（ディープコピー）
+ * 予約キーを除いたスナップショットを作成（ディープコピー）
  */
 function createSnapshot(currentState: any): GameStateSnapshot {
-  const { __history__, __writeId__, ...rest } = currentState;
+  const { __history__, __writeId__, __settlements__, __recent_log__, ...rest } = currentState;
   // ディープコピーで参照を切る
   return JSON.parse(JSON.stringify(rest)) as GameStateSnapshot;
+}
+
+/** __recent_log__ に追加するエントリ（軽量: snapshot なし） */
+interface RecentLogEntry {
+  id: string;
+  timestamp: number;
+  message: string;
+}
+
+/** __recent_log__ のリングバッファ更新（最新5件を保持） */
+const RECENT_LOG_MAX = 5;
+function pushRecentLog(currentState: any, entry: RecentLogEntry): void {
+  const log: RecentLogEntry[] = currentState.__recent_log__ || [];
+  log.push(entry);
+  if (log.length > RECENT_LOG_MAX) {
+    currentState.__recent_log__ = log.slice(-RECENT_LOG_MAX);
+  } else {
+    currentState.__recent_log__ = log;
+  }
+}
+
+/**
+ * room_history テーブルに履歴を INSERT
+ */
+async function insertHistory(
+  roomId: string,
+  message: string,
+  snapshot: GameStateSnapshot
+): Promise<void> {
+  const { error } = await supabase
+    .from("room_history")
+    .insert({ room_id: roomId, message, snapshot });
+  if (error) {
+    console.error("Error inserting history:", error);
+  }
 }
 
 /**
@@ -496,15 +530,11 @@ export async function transferScore(
         })
         .join(", ");
 
-      const historyEntry: HistoryEntry = {
-        id: generateUUID(),
-        timestamp: Date.now(),
-        message: `${displayFromName} → ${displayToName}: ${transferDetails}`,
-        snapshot: beforeSnapshot,
-      };
-      // 5. 履歴配列に追加
-      const existingHistory = currentState.__history__ || [];
-      currentState.__history__ = [...existingHistory, historyEntry];
+      const historyMessage = `${displayFromName} → ${displayToName}: ${transferDetails}`;
+      const entryId = generateUUID();
+
+      // 5. __recent_log__ を更新（軽量プレビュー用）
+      pushRecentLog(currentState, { id: entryId, timestamp: Date.now(), message: historyMessage });
 
       // 6. 一意の書き込みIDを付与（CAS検証用）
       const writeId = generateUUID();
@@ -527,7 +557,9 @@ export async function transferScore(
         .eq("id", roomId)
         .single();
       if (verify?.current_state?.__writeId__ === writeId) {
-        return { error: null }; // 自分の書き込みが残っている → 成功確定
+        // 成功確定 → 履歴を別テーブルに保存（非同期、失敗しても操作自体は成功）
+        await insertHistory(roomId, historyMessage, beforeSnapshot);
+        return { error: null };
       }
       // 別クライアントに上書きされた → 最新stateを再取得してリトライ
       if (attempt < MAX_RETRIES) {
@@ -858,20 +890,21 @@ export async function rollbackTo(
       throw new Error("ルームが見つかりません");
     }
 
-    const currentState = room.current_state;
-    const history: HistoryEntry[] = currentState.__history__ || [];
+    // 2. room_history テーブルから対象エントリを取得
+    const { data: targetEntry, error: histError } = await supabase
+      .from("room_history")
+      .select("*")
+      .eq("id", historyId)
+      .eq("room_id", roomId)
+      .single();
 
-    // 2. 指定されたhistoryIdを探す
-    const targetIndex = history.findIndex((entry) => entry.id === historyId);
-
-    if (targetIndex === -1) {
+    if (histError || !targetEntry) {
       throw new Error("指定された履歴が見つかりません");
     }
 
-    // 3. 見つかった要素のsnapshotを展開
-    const targetEntry = history[targetIndex];
+    const currentState = room.current_state;
 
-    // 着席中プレイヤーの変数データを補完（離席者のデータも保持）
+    // 3. 見つかった要素のsnapshotを展開
     const restoredState = ensureSeatedPlayersHaveState(
       { ...targetEntry.snapshot },
       room.seats ?? [],
@@ -879,24 +912,25 @@ export async function rollbackTo(
       currentState
     );
 
-    // 4. ロールバック地点より「未来」の履歴を削除（targetIndexまで残す）
-    const truncatedHistory = history.slice(0, targetIndex);
+    // 4. ロールバック前の状態を履歴に保存
+    const rollbackMessage = `ロールバック (${new Date(targetEntry.created_at).toLocaleTimeString("ja-JP")})`;
+    const beforeSnapshot = createSnapshot(currentState);
 
-    // 5. ロールバック操作自体を履歴に追加
-    const rollbackEntry: HistoryEntry = {
-      id: generateUUID(),
-      timestamp: Date.now(),
-      message: `🔄 ロールバック (${new Date(targetEntry.timestamp).toLocaleTimeString("ja-JP")})`,
-      snapshot: createSnapshot(currentState), // ロールバック前の状態を保存
-    };
+    // 5. 対象エントリより新しい履歴を削除
+    await supabase
+      .from("room_history")
+      .delete()
+      .eq("room_id", roomId)
+      .gte("created_at", targetEntry.created_at);
 
-    // 6. 新しいcurrent_stateを構築
-    const newState = {
-      ...restoredState,
-      __history__: [...truncatedHistory, rollbackEntry],
-    };
+    // 6. ロールバック操作自体を履歴に追加
+    await insertHistory(roomId, rollbackMessage, beforeSnapshot);
 
-    // 7. Supabaseに保存
+    // 7. 新しいcurrent_stateを構築（__recent_log__ を更新）
+    const newState = { ...restoredState };
+    pushRecentLog(newState, { id: generateUUID(), timestamp: Date.now(), message: rollbackMessage });
+
+    // 8. Supabaseに保存
     const { error: updateError } = await supabase
       .from("rooms")
       .update({ current_state: newState })
@@ -962,50 +996,18 @@ export async function updateTemplate(
         }
       }
 
-      // 履歴のsnapshotにも新変数のデフォルト値を挿入
-      const history: HistoryEntry[] = currentState.__history__ || [];
-      for (const entry of history) {
-        const snapshotPlayerIds = Object.keys(entry.snapshot).filter(
-          (key) => !key.startsWith("__")
-        );
-        for (const playerId of snapshotPlayerIds) {
-          const playerSnapshot = entry.snapshot[playerId];
-          if (playerSnapshot && typeof playerSnapshot === "object") {
-            for (const variable of templateUpdate.variables) {
-              if ((playerSnapshot as any)[variable.key] === undefined) {
-                (playerSnapshot as any)[variable.key] = variable.initial;
-              }
-            }
-          }
-        }
-      }
-
-      // 既存変数の initial 差分スライド
+      // 既存変数の initial 差分スライド（現在のプレイヤーのみ。履歴スナップショットは別テーブルなので不変）
       const oldVariables = room.template.variables || [];
       for (const newVar of templateUpdate.variables) {
         const oldVar = oldVariables.find((v: any) => v.key === newVar.key);
-        if (!oldVar) continue; // 新規追加変数はスキップ（上のロジックで処理済み）
+        if (!oldVar) continue;
 
         const diff = newVar.initial - oldVar.initial;
         if (diff === 0) continue;
 
-        // 全プレイヤーに差分適用
         for (const playerId of playerIds) {
           if (currentState[playerId][newVar.key] !== undefined) {
             currentState[playerId][newVar.key] += diff;
-          }
-        }
-
-        // 履歴スナップショットにも差分適用
-        for (const entry of history) {
-          const snapshotPlayerIds = Object.keys(entry.snapshot).filter(
-            (key) => !key.startsWith("__")
-          );
-          for (const pid of snapshotPlayerIds) {
-            const ps = entry.snapshot[pid];
-            if (ps && typeof ps === "object" && (ps as any)[newVar.key] !== undefined) {
-              (ps as any)[newVar.key] += diff;
-            }
           }
         }
       }
@@ -1091,16 +1093,10 @@ export async function forceEditScore(
       })
       .join(", ");
 
-    const historyEntry: HistoryEntry = {
-      id: generateUUID(),
-      timestamp: Date.now(),
-      message: `✏️ 強制編集: ${displayName || playerId.substring(0, 8)} - ${details}`,
-      snapshot: beforeSnapshot,
-    };
+    const historyMessage = `強制編集: ${displayName || playerId.substring(0, 8)} - ${details}`;
 
-    // 5. 履歴に追加して保存
-    const existingHistory = currentState.__history__ || [];
-    currentState.__history__ = [...existingHistory, historyEntry];
+    // 5. __recent_log__ を更新して保存
+    pushRecentLog(currentState, { id: generateUUID(), timestamp: Date.now(), message: historyMessage });
 
     const { error: updateError } = await supabase
       .from("rooms")
@@ -1110,6 +1106,9 @@ export async function forceEditScore(
     if (updateError) {
       throw updateError;
     }
+
+    // 6. 履歴を別テーブルに保存
+    await insertHistory(roomId, historyMessage, beforeSnapshot);
 
     return { error: null };
   } catch (error) {
@@ -1188,16 +1187,10 @@ export async function resetScores(
       })
       .join(", ");
 
-    const historyEntry: HistoryEntry = {
-      id: generateUUID(),
-      timestamp: Date.now(),
-      message: `🔄 リセット: ${labels}`,
-      snapshot: beforeSnapshot,
-    };
+    const historyMessage = `リセット: ${labels}`;
 
-    // 6. 履歴に追加して保存
-    const existingHistory = currentState.__history__ || [];
-    currentState.__history__ = [...existingHistory, historyEntry];
+    // 6. __recent_log__ を更新して保存
+    pushRecentLog(currentState, { id: generateUUID(), timestamp: Date.now(), message: historyMessage });
 
     const { error: updateError } = await supabase
       .from("rooms")
@@ -1207,6 +1200,9 @@ export async function resetScores(
     if (updateError) {
       throw updateError;
     }
+
+    // 7. 履歴を別テーブルに保存
+    await insertHistory(roomId, historyMessage, beforeSnapshot);
 
     return { error: null };
   } catch (error) {
@@ -1245,15 +1241,20 @@ export async function undoLast(
       throw new Error("ルームが見つかりません");
     }
 
-    const currentState = room.current_state;
-    const history: HistoryEntry[] = currentState.__history__ || [];
+    // 2. room_history から最新エントリを取得
+    const { data: lastEntry, error: histError } = await supabase
+      .from("room_history")
+      .select("*")
+      .eq("room_id", roomId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .single();
 
-    if (history.length === 0) {
+    if (histError || !lastEntry) {
       throw new Error("取り消せる操作がありません");
     }
 
-    // 2. 最後の履歴エントリを取得
-    const lastEntry = history[history.length - 1];
+    const currentState = room.current_state;
 
     // 3. 最後のエントリのsnapshotを復元（着席中プレイヤー・離席者の変数データを補完）
     const restoredState = ensureSeatedPlayersHaveState(
@@ -1263,14 +1264,19 @@ export async function undoLast(
       currentState
     );
 
-    // 4. 最後の履歴を削除
-    const truncatedHistory = history.slice(0, -1);
+    // 4. room_history から最後のエントリを削除
+    await supabase
+      .from("room_history")
+      .delete()
+      .eq("id", lastEntry.id);
 
-    // 5. 新しいcurrent_stateを構築
-    const newState = {
-      ...restoredState,
-      __history__: truncatedHistory,
-    };
+    // 5. 新しいcurrent_stateを構築（__recent_log__ を更新）
+    const newState = { ...restoredState };
+    // 直前のrecentLogからundoした操作を除去（あれば）
+    const recentLog = currentState.__recent_log__ || [];
+    newState.__recent_log__ = recentLog.filter(
+      (entry: any) => entry.message !== lastEntry.message
+    );
 
     // 6. Supabaseに保存
     const { error: updateError } = await supabase
@@ -1639,11 +1645,7 @@ export async function saveSettlement(
     // 2. 操作前のスナップショットを作成（履歴用）
     const beforeSnapshot = createSnapshot(currentState);
 
-    // 3. __settlements__ 配列に Settlement を追加
-    const existingSettlements = currentState.__settlements__ || [];
-    currentState.__settlements__ = [...existingSettlements, settlement];
-
-    // 4. score変数を初期値にリセット（他の変数はそのまま）
+    // 3. score変数を初期値にリセット（他の変数はそのまま）
     const scoreVar = room.template?.variables?.find(
       (v: { key: string }) => v.key === "score"
     );
@@ -1663,22 +1665,16 @@ export async function saveSettlement(
       currentState.__pot__.score = 0;
     }
 
-    // 5. 履歴メッセージを作成（精算結果サマリ）
+    // 4. 履歴メッセージを作成（精算結果サマリ）
     const resultSummary = Object.values(settlement.playerResults)
       .sort((a, b) => a.rank - b.rank)
       .map((r) => `${r.displayName}: ${r.result >= 0 ? "+" : ""}${r.result}`)
       .join(", ");
 
-    const historyEntry: HistoryEntry = {
-      id: generateUUID(),
-      timestamp: Date.now(),
-      message: `📊 精算: ${resultSummary}`,
-      snapshot: beforeSnapshot,
-    };
+    const historyMessage = `精算: ${resultSummary}`;
 
-    // 6. 履歴に追加して保存
-    const existingHistory = currentState.__history__ || [];
-    currentState.__history__ = [...existingHistory, historyEntry];
+    // 5. __recent_log__ を更新して保存
+    pushRecentLog(currentState, { id: generateUUID(), timestamp: Date.now(), message: historyMessage });
 
     const { error: updateError } = await supabase
       .from("rooms")
@@ -1688,6 +1684,19 @@ export async function saveSettlement(
     if (updateError) {
       throw updateError;
     }
+
+    // 6. 精算を別テーブルに保存
+    await supabase
+      .from("room_settlements")
+      .insert({
+        id: settlement.id,
+        room_id: roomId,
+        type: settlement.type,
+        player_results: settlement.playerResults,
+      });
+
+    // 7. 履歴を別テーブルに保存
+    await insertHistory(roomId, historyMessage, beforeSnapshot);
 
     return { error: null };
   } catch (error) {
@@ -1732,26 +1741,16 @@ export async function saveAdjustment(
     // 2. 操作前のスナップショットを作成（履歴用）
     const beforeSnapshot = createSnapshot(currentState);
 
-    // 3. __settlements__ 配列に Settlement を追加
-    const existingSettlements = currentState.__settlements__ || [];
-    currentState.__settlements__ = [...existingSettlements, settlement];
-
-    // 4. 履歴メッセージを作成（調整サマリ）
+    // 3. 履歴メッセージを作成（調整サマリ）
     const resultSummary = Object.values(settlement.playerResults)
       .filter((r) => r.result !== 0)
       .map((r) => `${r.displayName}: ${r.result >= 0 ? "+" : ""}${r.result.toFixed(1)}`)
       .join(", ");
 
-    const historyEntry: HistoryEntry = {
-      id: generateUUID(),
-      timestamp: Date.now(),
-      message: `📝 調整: ${resultSummary}`,
-      snapshot: beforeSnapshot,
-    };
+    const historyMessage = `調整: ${resultSummary}`;
 
-    // 5. 履歴に追加して保存
-    const existingHistory = currentState.__history__ || [];
-    currentState.__history__ = [...existingHistory, historyEntry];
+    // 4. __recent_log__ を更新して保存（current_state の変更は不要、精算は別テーブル）
+    pushRecentLog(currentState, { id: generateUUID(), timestamp: Date.now(), message: historyMessage });
 
     const { error: updateError } = await supabase
       .from("rooms")
@@ -1762,6 +1761,19 @@ export async function saveAdjustment(
       throw updateError;
     }
 
+    // 5. 精算を別テーブルに保存
+    await supabase
+      .from("room_settlements")
+      .insert({
+        id: settlement.id,
+        room_id: roomId,
+        type: settlement.type,
+        player_results: settlement.playerResults,
+      });
+
+    // 6. 履歴を別テーブルに保存
+    await insertHistory(roomId, historyMessage, beforeSnapshot);
+
     return { error: null };
   } catch (error) {
     console.error("Error saving adjustment:", error);
@@ -1770,6 +1782,104 @@ export async function saveAdjustment(
         error instanceof Error
           ? error
           : new Error("調整の保存に失敗しました"),
+    };
+  }
+}
+
+// ============================================
+// 履歴・精算の読み取り API（ページネーション対応）
+// ============================================
+
+/** room_history テーブルのエントリ型 */
+export interface RoomHistoryEntry {
+  id: string;
+  room_id: string;
+  message: string;
+  snapshot: GameStateSnapshot;
+  created_at: string;
+}
+
+/**
+ * 操作履歴をページネーション取得（新しい順）
+ * @param roomId - ルームID
+ * @param cursor - 前回取得した最後のエントリの created_at（ISO文字列）。初回は省略
+ * @param limit - 取得件数（デフォルト10）
+ * @returns エントリ配列と次ページ有無
+ */
+export async function fetchHistory(
+  roomId: string,
+  cursor?: string,
+  limit: number = 10
+): Promise<{ entries: RoomHistoryEntry[]; hasMore: boolean; error: Error | null }> {
+  apiLog("fetchHistory", { roomId, cursor, limit });
+  try {
+    let query = supabase
+      .from("room_history")
+      .select("*")
+      .eq("room_id", roomId)
+      .order("created_at", { ascending: false })
+      .limit(limit + 1); // 次ページ存在判定用に+1
+
+    if (cursor) {
+      query = query.lt("created_at", cursor);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      throw error;
+    }
+
+    const entries = (data || []) as RoomHistoryEntry[];
+    const hasMore = entries.length > limit;
+    if (hasMore) {
+      entries.pop(); // +1 分を除去
+    }
+
+    return { entries, hasMore, error: null };
+  } catch (error) {
+    console.error("Error fetching history:", error);
+    return {
+      entries: [],
+      hasMore: false,
+      error: error instanceof Error ? error : new Error("履歴の取得に失敗しました"),
+    };
+  }
+}
+
+/**
+ * 精算履歴を全件取得（作成日時の昇順）
+ * @param roomId - ルームID
+ */
+export async function fetchSettlements(
+  roomId: string
+): Promise<{ settlements: Settlement[]; error: Error | null }> {
+  apiLog("fetchSettlements", { roomId });
+  try {
+    const { data, error } = await supabase
+      .from("room_settlements")
+      .select("*")
+      .eq("room_id", roomId)
+      .order("created_at", { ascending: true });
+
+    if (error) {
+      throw error;
+    }
+
+    // DB 行を Settlement 型に変換
+    const settlements: Settlement[] = (data || []).map((row: any) => ({
+      id: row.id,
+      timestamp: new Date(row.created_at).getTime(),
+      type: row.type as "settlement" | "adjustment",
+      playerResults: row.player_results,
+    }));
+
+    return { settlements, error: null };
+  } catch (error) {
+    console.error("Error fetching settlements:", error);
+    return {
+      settlements: [],
+      error: error instanceof Error ? error : new Error("精算履歴の取得に失敗しました"),
     };
   }
 }

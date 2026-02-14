@@ -3,7 +3,7 @@
  * ゲーム画面から右スワイプで遷移
  */
 
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -12,14 +12,14 @@ import {
   TouchableOpacity,
   BackHandler,
   useWindowDimensions,
+  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect } from "react";
 import { useRoomRealtime } from "../../../hooks/useRoomRealtime";
 import { useAuth } from "../../../hooks/useAuth";
 import { useToast } from "../../../hooks/useToast";
-import { saveAdjustment } from "../../../lib/roomApi";
+import { saveAdjustment, fetchSettlements } from "../../../lib/roomApi";
 import { Settlement } from "../../../types";
 import AdjustmentModal from "../../../components/game/AdjustmentModal";
 import Toast from "../../../components/common/Toast";
@@ -45,9 +45,26 @@ export default function SettlementScreen() {
   const { height: screenHeight } = useWindowDimensions();
 
   const [adjustmentModalVisible, setAdjustmentModalVisible] = useState(false);
+  const [settlements, setSettlements] = useState<Settlement[]>([]);
+  const [settlementsLoading, setSettlementsLoading] = useState(true);
 
   const isHost = user?.id === room?.host_user_id;
-  const settlements: Settlement[] = room?.current_state?.__settlements__ || [];
+
+  // room_settlements テーブルから精算データを取得
+  const loadSettlements = useCallback(async () => {
+    if (!id) return;
+    setSettlementsLoading(true);
+    try {
+      const { settlements: data } = await fetchSettlements(id);
+      setSettlements(data);
+    } finally {
+      setSettlementsLoading(false);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    loadSettlements();
+  }, [loadSettlements]);
 
   // 戻る操作
   useEffect(() => {
@@ -71,6 +88,7 @@ export default function SettlementScreen() {
       }
 
       setAdjustmentModalVisible(false);
+      await loadSettlements();
       await refetch();
     } catch (error) {
       console.error("Error saving adjustment:", error);
@@ -180,7 +198,11 @@ export default function SettlementScreen() {
         <View style={styles.headerRight} />
       </View>
 
-      {settlements.length === 0 ? (
+      {settlementsLoading ? (
+        <View style={styles.emptyState}>
+          <ActivityIndicator size="large" color="#3b82f6" />
+        </View>
+      ) : settlements.length === 0 ? (
         <View style={styles.emptyState}>
           <Text style={styles.emptyText}>精算履歴がありません</Text>
         </View>

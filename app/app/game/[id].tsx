@@ -41,7 +41,8 @@ import {
   undoLast,
   saveSettlement,
 } from "../../lib/roomApi";
-import { HistoryEntry, Settlement } from "../../types";
+import { RecentLogEntry } from "../../types";
+import { fetchSettlements } from "../../lib/roomApi";
 import { supabase } from "../../lib/supabase";
 import {
   canExecuteSettlement,
@@ -61,6 +62,7 @@ export default function GameScreen() {
   );
 
   const [isProcessing, setIsProcessing] = useState(false);
+  const [settlementCount, setSettlementCount] = useState(0);
   const { toasts, show: showToast, dismiss: dismissToast } = useToast();
 
   // エラーハンドリング: 永続的エラーと一時的エラーを分類
@@ -94,6 +96,21 @@ export default function GameScreen() {
   // ユーザーが座席に座っているかチェック（フック依存のため早期リターン前に計算）
   const isUserSeated =
     room?.seats?.some((seat) => seat && seat.userId === user?.id) || false;
+
+  // 精算件数を取得（room_settlements テーブルから非同期で取得）
+  useEffect(() => {
+    if (!room?.id) return;
+    fetchSettlements(room.id).then(({ settlements }) => {
+      setSettlementCount(settlements.length);
+    });
+  }, [room?.id]);
+
+  // 精算完了時にカウントを更新
+  const handleSettlementComplete = useCallback(async () => {
+    if (!room?.id) return;
+    const { settlements } = await fetchSettlements(room.id);
+    setSettlementCount(settlements.length);
+  }, [room?.id]);
 
   // 戻るボタンハンドラー（着席中なら離席確認ダイアログ表示）
   const handleBack = useCallback(() => {
@@ -161,7 +178,7 @@ export default function GameScreen() {
   }
 
   const isHost = user?.id === room.host_user_id;
-  // 予約キー（__pot__, __history__）を除外してプレイヤーリストを取得
+  // 予約キー（__pot__, __recent_log__）を除外してプレイヤーリストを取得
   const players = Object.keys(room.current_state || {}).filter(
     (id) => !id.startsWith("__")
   );
@@ -500,6 +517,7 @@ export default function GameScreen() {
 
             showToast("success", "精算が完了しました");
             await refetch();
+            await handleSettlementComplete();
           } catch (error) {
             console.error("Error executing settlement:", error);
             showToast("error", "精算の実行に失敗しました");
@@ -509,11 +527,8 @@ export default function GameScreen() {
     ]);
   };
 
-  // 履歴を取得
-  const history: HistoryEntry[] = room?.current_state?.__history__ || [];
-
-  // 精算履歴を取得
-  const settlements: Settlement[] = room?.current_state?.__settlements__ || [];
+  // 直近の操作ログを取得（プレビュー用）
+  const recentLog: RecentLogEntry[] = room?.current_state?.__recent_log__ || [];
 
   // 右スワイプで精算履歴ページに遷移
   const swipeGesture = Gesture.Pan()
@@ -561,12 +576,12 @@ export default function GameScreen() {
 
       {/* 履歴ログ */}
       <HistoryLog
-        history={history}
+        recentLog={recentLog}
+        roomId={room.id}
         onRollback={handleRollback}
         onUndo={handleUndo}
         isHost={isHost}
-        settlementCount={settlements.length}
-        roomId={room.id}
+        settlementCount={settlementCount}
       />
 
       {/* メインコンテンツ */}

@@ -226,14 +226,23 @@ export interface HistoryEntry {
 }
 
 /**
+ * __recent_log__ のエントリ型（プレビュー表示用、最新5件をリングバッファで保持）
+ */
+export interface RecentLogEntry {
+  id: string;
+  timestamp: number;
+  message: string;
+}
+
+/**
  * ゲーム状態（拡張版）
  * 全プレイヤーの現在の値を保持
- * 注意: "__pot__", "__history__", "__settlements__"は予約キーとして使用
+ * 注意: "__pot__", "__recent_log__"は予約キーとして使用
+ * 履歴は room_history テーブル、精算は room_settlements テーブルに分離済み
  */
 export type GameState = {
   __pot__?: PotState; // 供託金エリア（予約キー）
-  __history__?: HistoryEntry[]; // 履歴配列（時系列順）
-  __settlements__?: Settlement[]; // 精算履歴配列（時系列順）
+  __recent_log__?: RecentLogEntry[]; // 直近の操作ログ（プレビュー用、最新5件）
 } & {
   [userId: string]: PlayerState; // プレイヤー
 };

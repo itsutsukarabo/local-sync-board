@@ -1,9 +1,10 @@
 /**
- * 履歴ログコンポーネント
- * 全操作の履歴を表示し、任意の時点への復元（タイムトラベル）を可能にする
+ * 履歴ログコンポーネント（二層構造）
+ * - プレビュー: current_state.__recent_log__ の最新エントリを表示
+ * - モーダル: room_history テーブルからページネーション取得して全履歴を閲覧
  */
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
   View,
   Text,
@@ -15,34 +16,50 @@ import {
   Modal,
   PanResponder,
   Animated as RNAnimated,
+  ActivityIndicator,
+  NativeSyntheticEvent,
+  NativeScrollEvent,
 } from "react-native";
 import { useRouter } from "expo-router";
-import { HistoryEntry } from "../../types";
+import { fetchHistory, RoomHistoryEntry } from "../../lib/roomApi";
 
 const ONE_MINUTE = 60_000;
 
+/** __recent_log__ のエントリ型（roomApi の RecentLogEntry と同一構造） */
+export interface RecentLogEntry {
+  id: string;
+  timestamp: number;
+  message: string;
+}
+
 interface HistoryLogProps {
-  history: HistoryEntry[];
+  recentLog: RecentLogEntry[];
+  roomId: string;
   onRollback: (historyId: string) => Promise<void>;
   onUndo: () => Promise<void>;
   isHost: boolean;
   settlementCount?: number;
-  roomId?: string;
 }
 
 export default function HistoryLog({
-  history,
+  recentLog,
+  roomId,
   onRollback,
   onUndo,
   isHost,
   settlementCount,
-  roomId,
 }: HistoryLogProps) {
   const router = useRouter();
   const [isExpanded, setIsExpanded] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [now, setNow] = useState(Date.now());
   const translateY = useRef(new RNAnimated.Value(0)).current;
+
+  // モーダル用の履歴データ
+  const [modalEntries, setModalEntries] = useState<RoomHistoryEntry[]>([]);
+  const [modalLoading, setModalLoading] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+  const [cursor, setCursor] = useState<string | undefined>(undefined);
 
   const panResponder = useRef(
     PanResponder.create({
@@ -68,16 +85,63 @@ export default function HistoryLog({
     return () => clearInterval(timer);
   }, []);
 
-  const formatTime = (timestamp: number) => {
-    return new Date(timestamp).toLocaleTimeString("ja-JP", {
+  const formatTime = (timestamp: number | string) => {
+    const date = typeof timestamp === "string" ? new Date(timestamp) : new Date(timestamp);
+    return date.toLocaleTimeString("ja-JP", {
       hour: "2-digit",
       minute: "2-digit",
       second: "2-digit",
     });
   };
 
+  // モーダルを開いたとき、初回の履歴を取得
+  const openModal = useCallback(async () => {
+    setIsExpanded(true);
+    setModalEntries([]);
+    setCursor(undefined);
+    setHasMore(true);
+    setModalLoading(true);
+    try {
+      const result = await fetchHistory(roomId);
+      setModalEntries(result.entries);
+      setHasMore(result.hasMore);
+      if (result.entries.length > 0) {
+        setCursor(result.entries[result.entries.length - 1].created_at);
+      }
+    } finally {
+      setModalLoading(false);
+    }
+  }, [roomId]);
+
+  // スクロール末端で次ページを取得
+  const loadMore = useCallback(async () => {
+    if (modalLoading || !hasMore || !cursor) return;
+    setModalLoading(true);
+    try {
+      const result = await fetchHistory(roomId, cursor);
+      setModalEntries((prev) => [...prev, ...result.entries]);
+      setHasMore(result.hasMore);
+      if (result.entries.length > 0) {
+        setCursor(result.entries[result.entries.length - 1].created_at);
+      }
+    } finally {
+      setModalLoading(false);
+    }
+  }, [roomId, cursor, hasMore, modalLoading]);
+
+  const handleScroll = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
+      const isNearBottom = layoutMeasurement.height + contentOffset.y >= contentSize.height - 40;
+      if (isNearBottom && hasMore && !modalLoading) {
+        loadMore();
+      }
+    },
+    [loadMore, hasMore, modalLoading]
+  );
+
   const handleUndo = async () => {
-    if (history.length === 0) {
+    if (recentLog.length === 0) {
       Alert.alert("エラー", "取り消せる操作がありません");
       return;
     }
@@ -99,10 +163,10 @@ export default function HistoryLog({
     ]);
   };
 
-  const handleRollback = (entry: HistoryEntry) => {
+  const handleRollback = (entry: RoomHistoryEntry) => {
     Alert.alert(
       "タイムトラベル",
-      `${formatTime(entry.timestamp)} の状態に戻しますか？\n\nこの操作以降の変更は全て取り消されます。`,
+      `${formatTime(entry.created_at)} の状態に戻しますか？\n\nこの操作以降の変更は全て取り消されます。`,
       [
         { text: "キャンセル", style: "cancel" },
         {
@@ -122,8 +186,12 @@ export default function HistoryLog({
     );
   };
 
-  // 履歴を新しい順に表示
-  const reversedHistory = [...history].reverse();
+  // プレビュー表示用: 直近1分以内のエントリ or 最新1件
+  const previewEntries = (() => {
+    if (recentLog.length === 0) return [];
+    const recent = recentLog.filter((e) => now - e.timestamp < ONE_MINUTE);
+    return recent.length > 0 ? recent : [recentLog[recentLog.length - 1]];
+  })();
 
   return (
     <View style={styles.container}>
@@ -131,12 +199,12 @@ export default function HistoryLog({
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.headerButton}
-          onPress={() => setIsExpanded(!isExpanded)}
+          onPress={openModal}
         >
           <Text style={styles.headerTitle}>
-            📜 履歴 ({history.length})
+            📜 履歴
           </Text>
-          <Text style={styles.expandIcon}>{isExpanded ? "▲" : "▼"}</Text>
+          <Text style={styles.expandIcon}>▼</Text>
         </TouchableOpacity>
 
         {/* 精算履歴ボタン */}
@@ -150,7 +218,7 @@ export default function HistoryLog({
         )}
 
         {/* Undoボタン */}
-        {isHost && history.length > 0 && (
+        {isHost && recentLog.length > 0 && (
           <TouchableOpacity
             style={[styles.undoButton, isLoading && styles.buttonDisabled]}
             onPress={handleUndo}
@@ -161,109 +229,112 @@ export default function HistoryLog({
         )}
       </View>
 
-      {/* 最新1分間の履歴をプレビュー表示（折りたたみ時） */}
-      {!isExpanded && history.length > 0 && (() => {
-        const recentEntries = [...history]
-          .filter((e) => now - e.timestamp < ONE_MINUTE)
-          .reverse();
-        // 1分以内のエントリがない場合は最新1件を表示
-        const entries = recentEntries.length > 0
-          ? recentEntries
-          : [history[history.length - 1]];
-        return entries.map((entry) => (
-          <View key={entry.id} style={styles.preview}>
-            <Text style={styles.previewTime}>
-              {formatTime(entry.timestamp)}
-            </Text>
-            <Text style={styles.previewMessage} numberOfLines={1}>
-              {entry.message}
-            </Text>
-          </View>
-        ));
-      })()}
+      {/* 最新1分間の履歴をプレビュー表示 */}
+      {previewEntries.map((entry) => (
+        <View key={entry.id} style={styles.preview}>
+          <Text style={styles.previewTime}>
+            {formatTime(entry.timestamp)}
+          </Text>
+          <Text style={styles.previewMessage} numberOfLines={1}>
+            {entry.message}
+          </Text>
+        </View>
+      ))}
 
-      {/* 展開時の履歴リスト */}
-      {isExpanded && (
-        <Modal
-          visible={isExpanded}
-          animationType="slide"
-          transparent={true}
-          onRequestClose={() => setIsExpanded(false)}
-        >
-          <View style={styles.modalOverlay}>
-            <Pressable
-              style={styles.modalBackdrop}
-              onPress={() => setIsExpanded(false)}
-            />
-            <RNAnimated.View
-              style={[styles.modalContent, { transform: [{ translateY }] }]}
-            >
-              <View {...panResponder.panHandlers}>
-                <View style={styles.swipeHandle} />
-              </View>
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>操作履歴</Text>
-                <TouchableOpacity
-                  style={styles.closeButton}
-                  onPress={() => setIsExpanded(false)}
-                >
-                  <Text style={styles.closeButtonText}>✕</Text>
-                </TouchableOpacity>
-              </View>
+      {/* 展開時のモーダル（room_history からページネーション取得） */}
+      <Modal
+        visible={isExpanded}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setIsExpanded(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <Pressable
+            style={styles.modalBackdrop}
+            onPress={() => setIsExpanded(false)}
+          />
+          <RNAnimated.View
+            style={[styles.modalContent, { transform: [{ translateY }] }]}
+          >
+            <View {...panResponder.panHandlers}>
+              <View style={styles.swipeHandle} />
+            </View>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>操作履歴</Text>
+              <TouchableOpacity
+                style={styles.closeButton}
+                onPress={() => setIsExpanded(false)}
+              >
+                <Text style={styles.closeButtonText}>✕</Text>
+              </TouchableOpacity>
+            </View>
 
-              {history.length === 0 ? (
-                <View style={styles.emptyState}>
-                  <Text style={styles.emptyText}>履歴がありません</Text>
-                </View>
-              ) : (
-                <ScrollView style={styles.historyList}>
-                  {reversedHistory.map((entry, index) => (
-                    <View key={entry.id} style={styles.historyItem}>
-                      <View style={styles.historyItemContent}>
-                        <View style={styles.historyItemHeader}>
-                          <Text style={styles.historyTime}>
-                            {formatTime(entry.timestamp)}
-                          </Text>
-                          <Text style={styles.historyIndex}>
-                            #{history.length - index}
-                          </Text>
-                        </View>
-                        <Text style={styles.historyMessage}>
-                          {entry.message}
+            {modalEntries.length === 0 && !modalLoading ? (
+              <View style={styles.emptyState}>
+                <Text style={styles.emptyText}>履歴がありません</Text>
+              </View>
+            ) : (
+              <ScrollView
+                style={styles.historyList}
+                onScroll={handleScroll}
+                scrollEventThrottle={200}
+              >
+                {modalEntries.map((entry, index) => (
+                  <View key={entry.id} style={styles.historyItem}>
+                    <View style={styles.historyItemContent}>
+                      <View style={styles.historyItemHeader}>
+                        <Text style={styles.historyTime}>
+                          {formatTime(entry.created_at)}
                         </Text>
                       </View>
-
-                      {/* ロールバックボタン（ホストのみ、最新以外） */}
-                      {isHost && index > 0 && (
-                        <TouchableOpacity
-                          style={[
-                            styles.rollbackButton,
-                            isLoading && styles.buttonDisabled,
-                          ]}
-                          onPress={() => handleRollback(entry)}
-                          disabled={isLoading}
-                        >
-                          <Text style={styles.rollbackButtonText}>
-                            🔄
-                          </Text>
-                        </TouchableOpacity>
-                      )}
+                      <Text style={styles.historyMessage}>
+                        {entry.message}
+                      </Text>
                     </View>
-                  ))}
-                </ScrollView>
-              )}
 
-              {isHost && (
-                <View style={styles.modalFooter}>
-                  <Text style={styles.footerHint}>
-                    🔄 をタップするとその時点に戻せます
-                  </Text>
-                </View>
-              )}
-            </RNAnimated.View>
-          </View>
-        </Modal>
-      )}
+                    {/* ロールバックボタン（ホストのみ、最新以外） */}
+                    {isHost && index > 0 && (
+                      <TouchableOpacity
+                        style={[
+                          styles.rollbackButton,
+                          isLoading && styles.buttonDisabled,
+                        ]}
+                        onPress={() => handleRollback(entry)}
+                        disabled={isLoading}
+                      >
+                        <Text style={styles.rollbackButtonText}>
+                          🔄
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                ))}
+
+                {modalLoading && (
+                  <View style={styles.loadingMore}>
+                    <ActivityIndicator size="small" color="#6b7280" />
+                    <Text style={styles.loadingMoreText}>読み込み中...</Text>
+                  </View>
+                )}
+
+                {!hasMore && modalEntries.length > 0 && (
+                  <View style={styles.endOfList}>
+                    <Text style={styles.endOfListText}>-- ここまで --</Text>
+                  </View>
+                )}
+              </ScrollView>
+            )}
+
+            {isHost && (
+              <View style={styles.modalFooter}>
+                <Text style={styles.footerHint}>
+                  🔄 をタップするとその時点に戻せます
+                </Text>
+              </View>
+            )}
+          </RNAnimated.View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -421,14 +492,6 @@ const styles = StyleSheet.create({
     color: "#6b7280",
     fontFamily: "monospace",
   },
-  historyIndex: {
-    fontSize: 11,
-    color: "#9ca3af",
-    backgroundColor: "#f3f4f6",
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
   historyMessage: {
     fontSize: 15,
     color: "#1f2937",
@@ -451,5 +514,24 @@ const styles = StyleSheet.create({
   footerHint: {
     fontSize: 13,
     color: "#6b7280",
+  },
+  loadingMore: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 16,
+    gap: 8,
+  },
+  loadingMoreText: {
+    fontSize: 13,
+    color: "#6b7280",
+  },
+  endOfList: {
+    alignItems: "center",
+    paddingVertical: 16,
+  },
+  endOfListText: {
+    fontSize: 13,
+    color: "#d1d5db",
   },
 });
