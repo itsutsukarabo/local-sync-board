@@ -33,10 +33,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [profileLoading, setProfileLoading] = useState(false);
 
-  // デバッグ用: 経過時間付きログ
+  // デバッグ用ログ（通常は無効化。調査時に console.log に切り替え）
   const mountTimeRef = useRef(Date.now());
-  const dbg = (msg: string, ...args: unknown[]) =>
-    console.log(`[AuthContext +${Date.now() - mountTimeRef.current}ms]`, msg, ...args);
+  const dbg = (_msg: string, ..._args: unknown[]) => {};
 
   /**
    * プロファイルをSupabaseから取得

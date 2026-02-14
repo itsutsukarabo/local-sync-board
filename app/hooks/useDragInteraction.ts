@@ -207,9 +207,6 @@ export function useDragInteraction(options: {
       setFromPlayerId(playerId);
       setSnapTargetIdState(null);
       setPhase("dragging");
-
-      // [DEBUG] Phase6 デバッグログ
-      console.log(`[Drag] START from=${playerId} abs=(${absX.toFixed(0)},${absY.toFixed(0)}) rel=(${rel.x.toFixed(0)},${rel.y.toFixed(0)}) offset=(${containerOffsetRef.current.x.toFixed(0)},${containerOffsetRef.current.y.toFixed(0)})`);
     },
     [isProcessing, toRelative, startX, startY, currentX, currentY, snapTargetId]
   );
@@ -241,8 +238,6 @@ export function useDragInteraction(options: {
             setSnapTargetIdState(nearest.id);
             hapticSnap();
             onSnapEnter?.(nearest.id);
-            // [DEBUG] Phase6 デバッグログ
-            console.log(`[Drag] SNAP target=${nearest.id} dist=${nearest.distance.toFixed(0)}`);
           }
           currentX.value = withSpring(
             nearest.relPos.x,
@@ -304,8 +299,6 @@ export function useDragInteraction(options: {
 
       if (dropTarget) {
         // ドロップ成功
-        // [DEBUG] Phase6 デバッグログ
-        console.log(`[Drag] DROP from=${fromId} to=${dropTarget}`);
         hapticDropSuccess();
         onDrop(fromId, dropTarget);
         setPhase("idle");
@@ -315,8 +308,6 @@ export function useDragInteraction(options: {
         snapTargetId.value = "";
       } else {
         // キャンセル: ゴムバンド収縮アニメーション
-        // [DEBUG] Phase6 デバッグログ
-        console.log(`[Drag] CANCEL (retracting)`);
         setSnapTargetIdState(null);
         currentSnapRef.current = null;
         snapTargetId.value = "";

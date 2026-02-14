@@ -16,6 +16,16 @@ import {
 } from "../types";
 import { generateRoomCode } from "../utils/roomUtils";
 
+/** API呼び出しログ（roomApi経由の全操作を追跡） */
+const apiLog = (fn: string, params?: Record<string, unknown>) => {
+  const summary = params
+    ? Object.entries(params)
+        .map(([k, v]) => `${k}=${typeof v === "object" ? JSON.stringify(v) : v}`)
+        .join(" ")
+    : "";
+  console.log(`[API] ${fn}${summary ? " " + summary : ""}`);
+};
+
 /**
  * UUID生成（簡易版）
  */
@@ -79,6 +89,7 @@ function createSnapshot(currentState: any): GameStateSnapshot {
 export async function createRoom(
   template: GameTemplate
 ): Promise<{ room: Room; error: Error | null }> {
+  apiLog("createRoom", { layout: template.layoutMode });
   try {
     // 現在のユーザーを取得
     const {
@@ -166,6 +177,7 @@ export async function createRoom(
 export async function findRoomByCode(
   roomCode: string
 ): Promise<{ room: Room | null; error: Error | null }> {
+  apiLog("findRoomByCode", { roomCode });
   try {
     const { data, error } = await supabase
       .from("rooms")
@@ -202,6 +214,7 @@ export async function findRoomByCode(
 export async function joinRoom(
   roomCode: string
 ): Promise<{ room: Room | null; error: Error | null }> {
+  apiLog("joinRoom", { roomCode });
   try {
     // 現在のユーザーを取得
     const {
@@ -268,6 +281,7 @@ export async function joinRoom(
 export async function leaveRoom(
   roomId: string
 ): Promise<{ error: Error | null }> {
+  apiLog("leaveRoom", { roomId });
   try {
     // 現在のユーザーを取得
     const {
@@ -323,6 +337,7 @@ export async function leaveRoom(
 export async function deleteRoom(
   roomId: string
 ): Promise<{ error: Error | null }> {
+  apiLog("deleteRoom", { roomId });
   try {
     const { error } = await supabase.from("rooms").delete().eq("id", roomId);
 
@@ -351,6 +366,7 @@ export async function updateRoomStatus(
   roomId: string,
   status: "waiting" | "playing" | "finished"
 ): Promise<{ error: Error | null }> {
+  apiLog("updateRoomStatus", { roomId, status });
   try {
     const { error } = await supabase
       .from("rooms")
@@ -391,6 +407,7 @@ export async function transferScore(
   fromName?: string,
   toName?: string
 ): Promise<{ error: Error | null }> {
+  apiLog("transferScore", { from: fromName ?? fromId, to: toName ?? toId, transfers });
   const MAX_RETRIES = 5;
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
@@ -545,6 +562,7 @@ export async function transferScore(
 export async function joinGame(
   roomId: string
 ): Promise<{ room: Room | null; error: Error | null }> {
+  apiLog("joinGame", { roomId });
   try {
     // 現在のユーザーを取得
     const {
@@ -630,6 +648,7 @@ export async function joinSeat(
   roomId: string,
   seatIndex: number
 ): Promise<{ room: Room | null; error: Error | null }> {
+  apiLog("joinSeat", { roomId, seatIndex });
   try {
     // 現在のユーザーを取得
     const {
@@ -746,6 +765,7 @@ export async function joinSeat(
 export async function leaveSeat(
   roomId: string
 ): Promise<{ room: Room | null; error: Error | null }> {
+  apiLog("leaveSeat", { roomId });
   try {
     // 現在のユーザーを取得
     const {
@@ -822,6 +842,7 @@ export async function rollbackTo(
   roomId: string,
   historyId: string
 ): Promise<{ error: Error | null }> {
+  apiLog("rollbackTo", { roomId, historyId });
   try {
     // 1. 最新のルーム情報を取得
     const { data: room, error: fetchError } = await supabase
@@ -908,6 +929,7 @@ export async function updateTemplate(
   roomId: string,
   templateUpdate: Partial<GameTemplate>
 ): Promise<{ error: Error | null }> {
+  apiLog("updateTemplate", { roomId });
   try {
     // 1. 最新のルーム情報を取得
     const { data: room, error: fetchError } = await supabase
@@ -1028,6 +1050,7 @@ export async function forceEditScore(
   updates: Record<string, number>,
   displayName?: string
 ): Promise<{ error: Error | null }> {
+  apiLog("forceEditScore", { roomId, player: displayName ?? playerId, updates });
   try {
     // 1. 最新の current_state とテンプレートを取得
     const { data: room, error: fetchError } = await supabase
@@ -1110,6 +1133,7 @@ export async function resetScores(
   roomId: string,
   variableKeys: string[]
 ): Promise<{ error: Error | null }> {
+  apiLog("resetScores", { roomId, variableKeys });
   try {
     // 1. 最新の current_state とテンプレートを取得
     const { data: room, error: fetchError } = await supabase
@@ -1205,6 +1229,7 @@ export async function resetScores(
 export async function undoLast(
   roomId: string
 ): Promise<{ error: Error | null }> {
+  apiLog("undoLast", { roomId });
   try {
     // 1. 最新のルーム情報を取得
     const { data: room, error: fetchError } = await supabase
@@ -1278,6 +1303,7 @@ export async function forceLeaveSeat(
   roomId: string,
   targetUserId: string
 ): Promise<{ error: Error | null }> {
+  apiLog("forceLeaveSeat", { roomId, targetUserId });
   try {
     const { data: room, error: fetchError } = await supabase
       .from("rooms")
@@ -1335,6 +1361,7 @@ export async function joinFakeSeat(
   roomId: string,
   seatIndex: number
 ): Promise<{ error: Error | null }> {
+  apiLog("joinFakeSeat", { roomId, seatIndex });
   try {
     // 1. 現在のユーザーを取得（ホスト確認用）
     const {
@@ -1458,6 +1485,7 @@ export async function removeFakePlayer(
   roomId: string,
   fakeUserId: string
 ): Promise<{ error: Error | null }> {
+  apiLog("removeFakePlayer", { roomId, fakeUserId });
   try {
     // 1. 最新のルーム情報を取得
     const { data: room, error: fetchError } = await supabase
@@ -1520,6 +1548,7 @@ export async function reseatFakePlayer(
   fakeUserId: string,
   seatIndex: number
 ): Promise<{ error: Error | null }> {
+  apiLog("reseatFakePlayer", { roomId, fakeUserId, seatIndex });
   try {
     // 1. 最新のルーム情報を取得
     const { data: room, error: fetchError } = await supabase
@@ -1589,6 +1618,7 @@ export async function saveSettlement(
   roomId: string,
   settlement: Settlement
 ): Promise<{ error: Error | null }> {
+  apiLog("saveSettlement", { roomId });
   try {
     // 1. 最新の current_state とテンプレートを取得
     const { data: room, error: fetchError } = await supabase
@@ -1681,6 +1711,7 @@ export async function saveAdjustment(
   roomId: string,
   settlement: Settlement
 ): Promise<{ error: Error | null }> {
+  apiLog("saveAdjustment", { roomId });
   try {
     // 1. 最新の current_state を取得
     const { data: room, error: fetchError } = await supabase

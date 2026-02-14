@@ -25,9 +25,9 @@ export function useRoomRealtime(roomId: string | null): UseRoomRealtimeResult {
   const [room, setRoom] = useState<Room | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+  // デバッグ用ログ（通常は無効化。調査時に console.log に切り替え）
   const mountTimeRef = useRef(Date.now());
-  const dbg = (msg: string, ...args: unknown[]) =>
-    console.log(`[useRoomRealtime +${Date.now() - mountTimeRef.current}ms]`, msg, ...args);
+  const dbg = (_msg: string, ..._args: unknown[]) => {};
 
   // デバウンス用 ref
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);

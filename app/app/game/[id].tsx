@@ -63,8 +63,6 @@ export default function GameScreen() {
   const [isProcessing, setIsProcessing] = useState(false);
   const { toasts, show: showToast, dismiss: dismissToast } = useToast();
 
-  console.log("[GameScreen render]", { id, loading, hasRoom: !!room, hasError: !!error, hasUser: !!user });
-
   // エラーハンドリング
   useEffect(() => {
     if (error) {
