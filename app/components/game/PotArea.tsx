@@ -76,37 +76,28 @@ export default function PotArea({
     return () => clearTimeout(timer);
   }, [measurePosition]);
 
-  // 長押しでドラッグ開始
-  const longPress = Gesture.LongPress()
-    .minDuration(500)
-    .onStart(() => {
+  const panGesture = Gesture.Pan()
+    .minDistance(10)
+    .onStart((event) => {
       "worklet";
       if (onDragStart) {
-        runOnJS(onDragStart)("__pot__", centerX.value, centerY.value);
+        runOnJS(onDragStart)("__pot__", event.absoluteX, event.absoluteY);
       }
-    });
-
-  const pan = Gesture.Pan()
+    })
     .onUpdate((event) => {
       "worklet";
       if (onDragUpdate) {
-        runOnJS(onDragUpdate)(
-          centerX.value + event.translationX,
-          centerY.value + event.translationY
-        );
+        runOnJS(onDragUpdate)(event.absoluteX, event.absoluteY);
       }
     })
     .onEnd((event) => {
       "worklet";
       if (onDragEnd) {
-        runOnJS(onDragEnd)(
-          centerX.value + event.translationX,
-          centerY.value + event.translationY
-        );
+        runOnJS(onDragEnd)(event.absoluteX, event.absoluteY);
       }
     });
 
-  const gesture = Gesture.Simultaneous(longPress, pan);
+  const gesture = panGesture;
 
   return (
     <View style={styles.container} ref={viewRef}>

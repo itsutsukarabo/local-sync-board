@@ -28,16 +28,19 @@ export default function PaymentModal({
   // 各変数の金額を管理（文字列で保持）
   const [amounts, setAmounts] = useState<{ [key: string]: string }>({});
 
-  // モーダルが開くたびに全変数を空欄で初期化
+  // モーダルが開いた瞬間だけ全変数を空欄で初期化
+  // variables を依存に含めると、リアルタイム更新で参照が変わるたびにリセットされるため除外
+  const prevVisibleRef = React.useRef(false);
   useEffect(() => {
-    if (visible) {
+    if (visible && !prevVisibleRef.current) {
       const initial: { [key: string]: string } = {};
       variables.forEach((v) => {
         initial[v.key] = "";
       });
       setAmounts(initial);
     }
-  }, [visible, variables]);
+    prevVisibleRef.current = visible;
+  }, [visible]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleAmountChange = (key: string, value: string) => {
     // 数字のみ許可（マイナス不可）
