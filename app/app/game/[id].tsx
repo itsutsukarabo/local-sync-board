@@ -52,7 +52,7 @@ export default function GameScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { user } = useAuth();
-  const { room, loading, error, refetch } = useRoomRealtime(id);
+  const { room, loading, error, refetch, isRealtimeDisconnected } = useRoomRealtime(id);
   const { connectionStatuses } = useConnectionMonitor(
     id ?? null,
     user?.id ?? null,
@@ -550,6 +550,15 @@ export default function GameScreen() {
         </View>
       </View>
 
+      {/* 接続警告バナー */}
+      {isRealtimeDisconnected && (
+        <View style={styles.connectionBanner}>
+          <Text style={styles.connectionBannerText}>
+            サーバーとの接続が不安定です。自動再接続を試みています...
+          </Text>
+        </View>
+      )}
+
       {/* 履歴ログ */}
       <HistoryLog
         history={history}
@@ -684,6 +693,18 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: "#ef4444",
     marginBottom: 16,
+  },
+  connectionBanner: {
+    backgroundColor: "#fef3c7",
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "#fcd34d",
+  },
+  connectionBannerText: {
+    fontSize: 13,
+    color: "#92400e",
+    textAlign: "center",
   },
   header: {
     flexDirection: "row",

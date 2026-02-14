@@ -14,6 +14,8 @@ interface UseRoomRealtimeResult {
   loading: boolean;
   error: Error | null;
   refetch: () => Promise<void>;
+  /** Realtime チャンネルが切断中・エラー中の場合 true */
+  isRealtimeDisconnected: boolean;
 }
 
 /**
@@ -25,6 +27,7 @@ export function useRoomRealtime(roomId: string | null): UseRoomRealtimeResult {
   const [room, setRoom] = useState<Room | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+  const [isRealtimeDisconnected, setIsRealtimeDisconnected] = useState(false);
   // デバッグ用ログ（通常は無効化。調査時に console.log に切り替え）
   const mountTimeRef = useRef(Date.now());
   const dbg = (_msg: string, ..._args: unknown[]) => {};
@@ -158,6 +161,8 @@ export function useRoomRealtime(roomId: string | null): UseRoomRealtimeResult {
     // Realtime購読の設定
     // チャンネル名をユニーク化し、複数画面で同名チャンネルの衝突を防止
     const channelId = `room-${roomId}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    let resubscribeTimer: ReturnType<typeof setTimeout> | null = null;
+
     const setupRealtimeSubscription = () => {
       dbg("setupRealtimeSubscription, channelId =", channelId);
       channel = supabase
@@ -187,7 +192,30 @@ export function useRoomRealtime(roomId: string | null): UseRoomRealtimeResult {
             setError(new Error("ルームが削除されました"));
           }
         )
-        .subscribe();
+        .subscribe((status, err) => {
+          dbg("channel status:", status, err);
+          if (status === "SUBSCRIBED") {
+            setIsRealtimeDisconnected(false);
+            // 再接続後はデータを最新化
+            refetchRef.current();
+          } else if (status === "CHANNEL_ERROR") {
+            console.error("Realtime channel error:", err);
+            setIsRealtimeDisconnected(true);
+          } else if (status === "TIMED_OUT") {
+            console.error("Realtime channel timed out, retrying...");
+            setIsRealtimeDisconnected(true);
+            // タイムアウト時は少し待ってから再購読を試みる
+            if (resubscribeTimer) clearTimeout(resubscribeTimer);
+            resubscribeTimer = setTimeout(() => {
+              if (channel) {
+                channel.subscribe();
+              }
+            }, 5_000);
+          } else if (status === "CLOSED") {
+            dbg("channel closed");
+            setIsRealtimeDisconnected(true);
+          }
+        });
     };
 
     // 初期化
@@ -197,9 +225,11 @@ export function useRoomRealtime(roomId: string | null): UseRoomRealtimeResult {
     // クリーンアップ
     return () => {
       dbg("cleanup: removing channel");
+      if (resubscribeTimer) clearTimeout(resubscribeTimer);
       if (channel) {
         supabase.removeChannel(channel);
       }
+      setIsRealtimeDisconnected(false);
     };
   }, [roomId]);
 
@@ -213,5 +243,5 @@ export function useRoomRealtime(roomId: string | null): UseRoomRealtimeResult {
     return () => subscription.remove();
   }, [roomId]);
 
-  return { room, loading, error, refetch };
+  return { room, loading, error, refetch, isRealtimeDisconnected };
 }
