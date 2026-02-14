@@ -40,10 +40,8 @@ export default function PaymentModal({
   }, [visible, variables]);
 
   const handleAmountChange = (key: string, value: string) => {
-    // 数字とマイナス記号を許可
-    const sanitized = value.replace(/[^0-9-]/g, "");
-    // マイナスは先頭のみ許可
-    const cleaned = sanitized.charAt(0) + sanitized.slice(1).replace(/-/g, "");
+    // 数字のみ許可（マイナス不可）
+    const cleaned = value.replace(/[^0-9]/g, "");
     setAmounts((prev) => ({ ...prev, [key]: cleaned }));
   };
 
@@ -98,7 +96,7 @@ export default function PaymentModal({
                     onChangeText={(value) =>
                       handleAmountChange(variable.key, value)
                     }
-                    keyboardType="numbers-and-punctuation"
+                    keyboardType="number-pad"
                     selectTextOnFocus
                   />
                 </View>

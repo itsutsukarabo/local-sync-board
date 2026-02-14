@@ -106,7 +106,7 @@ export default function MahjongPlayerCard({
   }, [playerId, position, onPositionMeasured]);
 
   const panGesture = Gesture.Pan()
-    .enabled(isCurrentUser || (isHostUser === true && isFakePlayer === true))
+    .enabled(isCurrentUser || isHostUser === true)
     .minDistance(10)
     .onStart((event) => {
       "worklet";
