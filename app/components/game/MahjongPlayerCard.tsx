@@ -1,9 +1,16 @@
 import React, { useRef, useEffect, useCallback } from "react";
-import { View, Text, StyleSheet } from "react-native";
+import { View, Text, StyleSheet, Platform } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
-import Animated, { useSharedValue, runOnJS } from "react-native-reanimated";
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  runOnJS,
+} from "react-native-reanimated";
 import { PlayerState, Variable, SeatPosition } from "../../types";
 import { getSeatStyle } from "../../utils/seatUtils";
+import RippleEffect from "./RippleEffect";
+import * as Haptics from "expo-haptics";
 
 interface MahjongPlayerCardProps {
   playerId: string;
@@ -12,10 +19,12 @@ interface MahjongPlayerCardProps {
   isCurrentUser: boolean;
   isHost: boolean;
   position: SeatPosition;
-  displayName?: string; // プレイヤーの表示名
+  displayName?: string;
   disconnectedAt?: number | null;
-  isHostUser?: boolean; // 現在のユーザーがホストか
-  isFakePlayer?: boolean; // このカードが架空ユーザーか
+  isHostUser?: boolean;
+  isFakePlayer?: boolean;
+  isHighlighted?: boolean;
+  isDragging?: boolean;
   onTap?: (playerId: string) => void;
   onDragStart: (playerId: string, x: number, y: number) => void;
   onDragUpdate: (x: number, y: number) => void;
@@ -28,6 +37,8 @@ function formatDisconnectSeconds(disconnectedAt: number): string {
   return `${seconds}秒`;
 }
 
+const HIGHLIGHT_SPRING = { damping: 15, stiffness: 150 };
+
 export default function MahjongPlayerCard({
   playerId,
   playerState,
@@ -39,6 +50,8 @@ export default function MahjongPlayerCard({
   disconnectedAt,
   isHostUser,
   isFakePlayer,
+  isHighlighted = false,
+  isDragging = false,
   onTap,
   onDragStart,
   onDragUpdate,
@@ -46,8 +59,27 @@ export default function MahjongPlayerCard({
   onPositionMeasured,
 }: MahjongPlayerCardProps) {
   const viewRef = useRef<View>(null);
-  const cardCenterX = useSharedValue(0);
-  const cardCenterY = useSharedValue(0);
+
+  // ハイライトアニメーション用
+  const highlightProgress = useSharedValue(0);
+
+  React.useEffect(() => {
+    highlightProgress.value = withSpring(
+      isHighlighted ? 1 : 0,
+      HIGHLIGHT_SPRING
+    );
+  }, [isHighlighted, highlightProgress]);
+
+  const highlightStyle = useAnimatedStyle(() => {
+    const scale = 1 + highlightProgress.value * 0.08;
+    return {
+      transform: [{ scale }],
+      borderColor:
+        highlightProgress.value > 0.5 ? "#3b82f6" : "#e5e7eb",
+      shadowRadius: 4 + highlightProgress.value * 8,
+      shadowOpacity: 0.1 + highlightProgress.value * 0.2,
+    };
+  });
 
   // カードの位置を測定して親に通知
   useEffect(() => {
@@ -73,22 +105,9 @@ export default function MahjongPlayerCard({
     };
   }, [playerId, position, onPositionMeasured]);
 
-  const handleDragStart = useCallback(() => {
-    // ドラッグ開始時に座標を測定（ページ全体に対する座標）
-    if (viewRef.current) {
-      viewRef.current.measure((x, y, width, height, pageX, pageY) => {
-        const centerX = pageX + width / 2;
-        const centerY = pageY + height / 2;
-        cardCenterX.value = centerX;
-        cardCenterY.value = centerY;
-        onDragStart(playerId, centerX, centerY);
-      });
-    }
-  }, [playerId, onDragStart, cardCenterX, cardCenterY]);
-
   const panGesture = Gesture.Pan()
-    .enabled(isCurrentUser || (isHostUser === true && isFakePlayer === true)) // 自分のカード + ホストは架空ユーザーもドラッグ可能
-    .minDistance(10) // 10px以上動いたらパン開始（タップと区別）
+    .enabled(isCurrentUser || (isHostUser === true && isFakePlayer === true))
+    .minDistance(10)
     .onStart((event) => {
       "worklet";
       runOnJS(onDragStart)(playerId, event.absoluteX, event.absoluteY);
@@ -102,22 +121,29 @@ export default function MahjongPlayerCard({
       runOnJS(onDragEnd)(event.absoluteX, event.absoluteY);
     });
 
-  const tapGesture = Gesture.Tap()
-    .onEnd(() => {
-      "worklet";
-      if (onTap) {
-        runOnJS(onTap)(playerId);
-      }
-    });
+  const doTapHaptic = useCallback(() => {
+    if (Platform.OS !== "web") {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+  }, []);
 
-  // Pan優先: 10px以上動いたらドラッグ、動かなければタップ
+  const tapGesture = Gesture.Tap().onEnd(() => {
+    "worklet";
+    runOnJS(doTapHaptic)();
+    if (onTap) {
+      runOnJS(onTap)(playerId);
+    }
+  });
+
   const gesture = Gesture.Exclusive(panGesture, tapGesture);
 
   const positionStyle = getSeatStyle(position);
 
   return (
     <View style={[styles.container, positionStyle]} ref={viewRef}>
-      {/* 接続切れバッジ - カードの右上に配置 */}
+      {/* 自席の波紋エフェクト */}
+      {isCurrentUser && <RippleEffect isDragging={isDragging} />}
+
       {disconnectedAt != null && (
         <View style={styles.disconnectBadge}>
           <Text style={styles.disconnectBadgeText}>
@@ -127,11 +153,13 @@ export default function MahjongPlayerCard({
       )}
 
       <GestureDetector gesture={gesture}>
-        <Animated.View style={styles.card}>
+        <Animated.View style={[styles.card, highlightStyle]}>
           <View style={styles.header}>
             {isHost && <Text style={styles.crown}>👑</Text>}
             <Text style={styles.name} numberOfLines={1}>
-              {isCurrentUser ? "あなた" : displayName || `Player ${playerId.slice(0, 4)}`}
+              {isCurrentUser
+                ? "あなた"
+                : displayName || `Player ${playerId.slice(0, 4)}`}
             </Text>
           </View>
           {variables.map((variable) => {

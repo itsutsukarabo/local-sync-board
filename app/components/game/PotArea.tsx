@@ -1,21 +1,30 @@
 import React, { useRef, useEffect, useCallback } from "react";
 import { View, Text, StyleSheet } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
-import Animated, { useSharedValue, runOnJS } from "react-native-reanimated";
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  runOnJS,
+} from "react-native-reanimated";
 import { PotState, Variable } from "../../types";
 
 interface PotAreaProps {
   pot: PotState;
   variables: Variable[];
+  isHighlighted?: boolean;
   onDragStart?: (potId: string, x: number, y: number) => void;
   onDragUpdate?: (x: number, y: number) => void;
   onDragEnd?: (x: number, y: number) => void;
   onPositionMeasured?: (x: number, y: number) => void;
 }
 
+const HIGHLIGHT_SPRING = { damping: 15, stiffness: 150 };
+
 export default function PotArea({
   pot,
   variables,
+  isHighlighted = false,
   onDragStart,
   onDragUpdate,
   onDragEnd,
@@ -24,6 +33,27 @@ export default function PotArea({
   const viewRef = useRef<View>(null);
   const centerX = useSharedValue(0);
   const centerY = useSharedValue(0);
+
+  // ハイライトアニメーション
+  const highlightProgress = useSharedValue(0);
+
+  React.useEffect(() => {
+    highlightProgress.value = withSpring(
+      isHighlighted ? 1 : 0,
+      HIGHLIGHT_SPRING
+    );
+  }, [isHighlighted, highlightProgress]);
+
+  const highlightStyle = useAnimatedStyle(() => {
+    const scale = 1 + highlightProgress.value * 0.1;
+    return {
+      transform: [{ scale }],
+      borderColor:
+        highlightProgress.value > 0.5 ? "#3b82f6" : "#f59e0b",
+      shadowRadius: 4 + highlightProgress.value * 8,
+      shadowOpacity: 0.2 + highlightProgress.value * 0.2,
+    };
+  });
 
   // Potの中心座標を測定
   const measurePosition = useCallback(() => {
@@ -81,7 +111,7 @@ export default function PotArea({
   return (
     <View style={styles.container} ref={viewRef}>
       <GestureDetector gesture={gesture}>
-        <Animated.View style={styles.potCard}>
+        <Animated.View style={[styles.potCard, highlightStyle]}>
           <Text style={styles.label}>供託金</Text>
           {variables.map((v) => {
             const value = pot[v.key] || 0;

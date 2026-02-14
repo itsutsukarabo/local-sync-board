@@ -13,7 +13,9 @@ import {
   Alert,
   ActivityIndicator,
   BackHandler,
+  Platform,
 } from "react-native";
+import * as Haptics from "expo-haptics";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useRoomRealtime } from "../../hooks/useRoomRealtime";
@@ -255,6 +257,11 @@ export default function GameScreen() {
   // 座席に着席するハンドラー
   const handleJoinSeat = async (seatIndex: number) => {
     if (!room || !user) return;
+
+    // 着席ボタンタップ時のHapticsフィードバック
+    if (Platform.OS !== "web") {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
 
     try {
       const { error } = await joinSeat(room.id, seatIndex);

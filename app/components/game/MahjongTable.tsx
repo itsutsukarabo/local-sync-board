@@ -1,29 +1,25 @@
-import React, { useState } from "react";
-import { View, StyleSheet, Dimensions } from "react-native";
+import React, { useState, useCallback, useRef } from "react";
+import { View, StyleSheet } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-import Svg, { Line, Polygon } from "react-native-svg";
 import {
   GameState,
   Variable,
   PotAction,
-  PotState,
   SeatInfo,
   SeatPosition,
   ConnectionStatus,
 } from "../../types";
 import {
-  createSeatMapFromSeats,
   getSeatPositionFromIndex,
-  getSeatStyle,
 } from "../../utils/seatUtils";
+import { useDragInteraction } from "../../hooks/useDragInteraction";
 import MahjongPlayerCard from "./MahjongPlayerCard";
 import PotArea from "./PotArea";
 import PaymentModal from "./PaymentModal";
 import PotActionSelectModal from "./PotActionSelectModal";
 import PlayerInfoModal from "./PlayerInfoModal";
 import EmptySeat from "./EmptySeat";
-
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
+import FluidArrow from "./FluidArrow";
 
 interface MahjongTableProps {
   gameState: GameState;
@@ -41,15 +37,6 @@ interface MahjongTableProps {
   isProcessing?: boolean;
 }
 
-interface DragState {
-  isDragging: boolean;
-  fromPlayerId: string | null;
-  startX: number;
-  startY: number;
-  currentX: number;
-  currentY: number;
-}
-
 export default function MahjongTable({
   gameState,
   variables,
@@ -65,10 +52,7 @@ export default function MahjongTable({
   connectionStatuses,
   isProcessing = false,
 }: MahjongTableProps) {
-  const containerRef = React.useRef<View>(null);
-  const [containerOffset, setContainerOffset] = React.useState({ x: 0, y: 0 });
-  // ドラッグ中に使用する最新のオフセット（非同期更新対応）
-  const currentOffsetRef = React.useRef({ x: 0, y: 0 });
+  const containerRef = useRef<View>(null);
 
   const [paymentModal, setPaymentModal] = useState<{
     visible: boolean;
@@ -87,55 +71,6 @@ export default function MahjongTable({
     seatIndex: number;
   } | null>(null);
 
-  const [dragState, setDragState] = useState<DragState>({
-    isDragging: false,
-    fromPlayerId: null,
-    startX: 0,
-    startY: 0,
-    currentX: 0,
-    currentY: 0,
-  });
-
-  // 絶対座標で保存（containerOffsetを引く前の座標）
-  const [cardPositionsAbsolute, setCardPositionsAbsolute] = useState<{
-    [key: string]: { x: number; y: number };
-  }>({});
-
-  const [potPositionAbsolute, setPotPositionAbsolute] = useState<{
-    x: number;
-    y: number;
-  }>({
-    x: 0,
-    y: 0,
-  });
-
-  // 相対座標に変換（着席中プレイヤーのみ。離席済みの古い座標を除外）
-  const seatedUserIds = React.useMemo(
-    () => new Set(seats.filter((s) => s && s.userId).map((s) => s!.userId!)),
-    [seats]
-  );
-  const cardPositions = React.useMemo(() => {
-    const relative: { [key: string]: { x: number; y: number } } = {};
-    for (const [id, pos] of Object.entries(cardPositionsAbsolute)) {
-      if (!seatedUserIds.has(id)) continue;
-      relative[id] = {
-        x: pos.x - containerOffset.x,
-        y: pos.y - containerOffset.y,
-      };
-    }
-    return relative;
-  }, [cardPositionsAbsolute, containerOffset, seatedUserIds]);
-
-  const potPosition = React.useMemo(
-    () => ({
-      x: potPositionAbsolute.x - containerOffset.x,
-      y: potPositionAbsolute.y - containerOffset.y,
-    }),
-    [potPositionAbsolute, containerOffset]
-  );
-
-  // 座席配列から座席マップを生成（視点回転あり）
-  const seatMap = createSeatMapFromSeats(seats, currentUserId);
   const pot = gameState.__pot__ || { score: 0 };
 
   // 現在のユーザーが座席に座っているかチェック
@@ -144,175 +79,81 @@ export default function MahjongTable({
   );
   const isHost = currentUserId === hostUserId;
 
-  // コンテナの位置を測定（座席状態が変わったときも再測定）
-  React.useEffect(() => {
-    const measureContainer = () => {
+  // --- ドロップ処理 ---
+  const handleDrop = useCallback(
+    (fromId: string, toId: string) => {
+      if (toId === "__pot__") {
+        if (potActions.length === 0) {
+          return;
+        } else if (potActions.length === 1) {
+          onTransfer(fromId, "__pot__", potActions[0].transfers);
+        } else {
+          setPotActionModal({ visible: true, fromId });
+        }
+      } else if (fromId === "__pot__") {
+        const transfers = Object.entries(pot)
+          .filter(([, value]) => (value || 0) > 0)
+          .map(([variableKey, value]) => ({ variable: variableKey, amount: value as number }));
+        if (transfers.length > 0) {
+          onTransfer("__pot__", toId, transfers);
+        }
+      } else {
+        setPaymentModal({ visible: true, fromId, toId });
+      }
+    },
+    [potActions, pot, onTransfer]
+  );
+
+  // --- ドラッグインタラクション ---
+  const drag = useDragInteraction({
+    isPotEnabled,
+    isProcessing,
+    onDrop: handleDrop,
+  });
+
+  // --- コンテナの絶対位置を測定 ---
+  const measureContainer = useCallback(() => {
+    if (containerRef.current) {
+      containerRef.current.measureInWindow((x, y) => {
+        drag.setContainerOffset(x, y);
+      });
+    }
+  }, [drag]);
+
+  // --- ドラッグ開始のラッパー（コンテナ位置を再測定してからドラッグ開始） ---
+  const handleDragStart = useCallback(
+    (playerId: string, absX: number, absY: number) => {
       if (containerRef.current) {
         containerRef.current.measureInWindow((x, y) => {
-          const newOffset = { x, y };
-          setContainerOffset(newOffset);
-          currentOffsetRef.current = newOffset;
+          drag.setContainerOffset(x, y);
+          drag.handleDragStart(playerId, absX, absY);
         });
-      }
-    };
-
-    // 複数回測定して確実に取得
-    const timer1 = setTimeout(measureContainer, 100);
-    const timer2 = setTimeout(measureContainer, 500);
-    const timer3 = setTimeout(measureContainer, 1000);
-    return () => {
-      clearTimeout(timer1);
-      clearTimeout(timer2);
-      clearTimeout(timer3);
-    };
-  }, [isUserSeated]); // 座席状態が変わったときも再測定
-
-  const handleDragStart = (playerId: string, x: number, y: number) => {
-    if (isProcessing) return; // 処理中はドラッグ不可
-    // ドラッグ開始時にコンテナ位置を再測定（スクロール対応）
-    if (containerRef.current) {
-      containerRef.current.measureInWindow((containerX, containerY) => {
-        const newOffset = { x: containerX, y: containerY };
-        setContainerOffset(newOffset);
-        currentOffsetRef.current = newOffset; // refも更新
-
-        // 新しいオフセットで座標を調整
-        const adjustedX = x - containerX;
-        const adjustedY = y - containerY;
-        setDragState({
-          isDragging: true,
-          fromPlayerId: playerId,
-          startX: adjustedX,
-          startY: adjustedY,
-          currentX: adjustedX,
-          currentY: adjustedY,
-        });
-      });
-    } else {
-      // フォールバック：既存のオフセットを使用
-      const adjustedX = x - containerOffset.x;
-      const adjustedY = y - containerOffset.y;
-      currentOffsetRef.current = containerOffset;
-      setDragState({
-        isDragging: true,
-        fromPlayerId: playerId,
-        startX: adjustedX,
-        startY: adjustedY,
-        currentX: adjustedX,
-        currentY: adjustedY,
-      });
-    }
-  };
-
-  const handleDragUpdate = (x: number, y: number) => {
-    // refから最新のオフセットを使用（ドラッグ開始時に測定した値）
-    const adjustedX = x - currentOffsetRef.current.x;
-    const adjustedY = y - currentOffsetRef.current.y;
-    setDragState((prev) => ({
-      ...prev,
-      currentX: adjustedX,
-      currentY: adjustedY,
-    }));
-  };
-
-  const handleDragEnd = (x: number, y: number) => {
-    // refから最新のオフセットを使用（ドラッグ開始時に測定した値）
-    const adjustedX = x - currentOffsetRef.current.x;
-    const adjustedY = y - currentOffsetRef.current.y;
-    if (!dragState.fromPlayerId) {
-      setDragState({
-        isDragging: false,
-        fromPlayerId: null,
-        startX: 0,
-        startY: 0,
-        currentX: 0,
-        currentY: 0,
-      });
-      return;
-    }
-
-    // ドロップ先を判定（調整済み座標を使用）
-    let dropTarget: string | null = null;
-
-    // Potへのドロップ判定
-    if (isPotEnabled) {
-      const distanceToPot = Math.sqrt(
-        Math.pow(adjustedX - potPosition.x, 2) +
-          Math.pow(adjustedY - potPosition.y, 2)
-      );
-      if (distanceToPot < 80) {
-        dropTarget = "__pot__";
-      }
-    }
-
-    // プレイヤーカードへのドロップ判定
-    if (!dropTarget) {
-      for (const [playerId, pos] of Object.entries(cardPositions)) {
-        if (playerId === dragState.fromPlayerId) continue;
-        const distance = Math.sqrt(
-          Math.pow(adjustedX - pos.x, 2) + Math.pow(adjustedY - pos.y, 2)
-        );
-        if (distance < 80) {
-          dropTarget = playerId;
-          break;
-        }
-      }
-    }
-
-    // ドロップ処理
-    if (dropTarget) {
-      handleDrop(dragState.fromPlayerId, dropTarget);
-    }
-
-    // ドラッグ状態をリセット
-    setDragState({
-      isDragging: false,
-      fromPlayerId: null,
-      startX: 0,
-      startY: 0,
-      currentX: 0,
-      currentY: 0,
-    });
-  };
-
-  const handleDrop = (fromId: string, toId: string) => {
-    if (toId === "__pot__") {
-      if (potActions.length === 0) {
-        return;
-      } else if (potActions.length === 1) {
-        // potActionsが1つの場合は即座に実行
-        onTransfer(fromId, "__pot__", potActions[0].transfers);
       } else {
-        // potActionsが複数の場合は選択モーダルを表示
-        setPotActionModal({ visible: true, fromId });
+        drag.handleDragStart(playerId, absX, absY);
       }
-    } else if (fromId === "__pot__") {
-      // 供託回収: pot内の全変数をtransfers配列にまとめて一括回収
-      const transfers = Object.entries(pot)
-        .filter(([, value]) => (value || 0) > 0)
-        .map(([variableKey, value]) => ({ variable: variableKey, amount: value as number }));
-      if (transfers.length > 0) {
-        onTransfer("__pot__", toId, transfers);
+    },
+    [drag]
+  );
+
+  const handleCardTap = useCallback(
+    (playerId: string) => {
+      const seatIndex = seats.findIndex((s) => s && s.userId === playerId);
+      if (seatIndex !== -1) {
+        setPlayerInfoModal({ visible: true, playerId, seatIndex });
       }
-    } else {
-      // 対人支払い: モーダルを表示
-      setPaymentModal({ visible: true, fromId, toId });
-    }
-  };
+    },
+    [seats]
+  );
 
-  const handlePaymentConfirm = async (transfers: { variable: string; amount: number }[]) => {
-    if (paymentModal) {
-      await onTransfer(paymentModal.fromId, paymentModal.toId, transfers);
-      setPaymentModal(null);
-    }
-  };
-
-  const handleCardTap = (playerId: string) => {
-    const seatIndex = seats.findIndex((s) => s && s.userId === playerId);
-    if (seatIndex !== -1) {
-      setPlayerInfoModal({ visible: true, playerId, seatIndex });
-    }
-  };
+  const handlePaymentConfirm = useCallback(
+    async (transfers: { variable: string; amount: number }[]) => {
+      if (paymentModal) {
+        await onTransfer(paymentModal.fromId, paymentModal.toId, transfers);
+        setPaymentModal(null);
+      }
+    },
+    [paymentModal, onTransfer]
+  );
 
   // モーダル表示中のプレイヤー情報を取得
   const infoModalSeat = playerInfoModal
@@ -322,49 +163,33 @@ export default function MahjongTable({
     ? gameState[playerInfoModal.playerId]
     : null;
 
-  // 矢印の先端を計算
-  const calculateArrowHead = (
-    x1: number,
-    y1: number,
-    x2: number,
-    y2: number
-  ) => {
-    const angle = Math.atan2(y2 - y1, x2 - x1);
-    const arrowLength = 15;
-    const arrowAngle = Math.PI / 6;
-
-    const point1X = x2 - arrowLength * Math.cos(angle - arrowAngle);
-    const point1Y = y2 - arrowLength * Math.sin(angle - arrowAngle);
-    const point2X = x2 - arrowLength * Math.cos(angle + arrowAngle);
-    const point2Y = y2 - arrowLength * Math.sin(angle + arrowAngle);
-
-    return `${point1X},${point1Y} ${x2},${y2} ${point2X},${point2Y}`;
-  };
-
   return (
     <GestureHandlerRootView style={styles.container}>
-      <View style={styles.table} ref={containerRef}>
+      <View
+        style={styles.table}
+        ref={containerRef}
+        onLayout={(e) => {
+          drag.onContainerLayout(e.nativeEvent.layout);
+          // レイアウト後にコンテナの絶対位置も測定
+          measureContainer();
+        }}
+      >
         {/* 座席とプレイヤーカードを表示 */}
         {seats.map((seat, index) => {
-          // 現在のユーザーの視点で座席位置を計算
           const currentUserSeatIndex = seats.findIndex(
             (s) => s && s.userId === currentUserId
           );
 
-          // 視点回転を適用
           let displayPosition: SeatPosition;
           if (currentUserSeatIndex !== -1) {
             const rotation = currentUserSeatIndex;
             const rotatedIndex = (index - rotation + 4) % 4;
             displayPosition = getSeatPositionFromIndex(rotatedIndex);
           } else {
-            // ユーザーが座席に座っていない場合は、そのままの位置
             displayPosition = getSeatPositionFromIndex(index);
           }
 
-          // 座席が空の場合
           if (!seat || !seat.userId) {
-            // ユーザーが既に座席に座っている場合は空席を表示しない（ホストは除く）
             if (isUserSeated && !isHost) {
               return null;
             }
@@ -380,11 +205,9 @@ export default function MahjongTable({
             );
           }
 
-          // プレイヤーが座っている場合
           const playerId = seat.userId;
           const playerState = gameState[playerId];
 
-          // プレイヤーの状態が存在しない場合はスキップ
           if (
             !playerState ||
             typeof playerState !== "object" ||
@@ -406,16 +229,14 @@ export default function MahjongTable({
               disconnectedAt={connectionStatuses?.get(playerId)?.disconnectedAt ?? null}
               isHostUser={isHost}
               isFakePlayer={seat.isFake === true}
+              isHighlighted={drag.snapTargetIdState === playerId}
+              isDragging={drag.visual.phase !== "idle"}
               onTap={handleCardTap}
               onDragStart={handleDragStart}
-              onDragUpdate={handleDragUpdate}
-              onDragEnd={handleDragEnd}
+              onDragUpdate={drag.handleDragUpdate}
+              onDragEnd={drag.handleDragEnd}
               onPositionMeasured={(id, x, y) => {
-                // 絶対座標のまま保存（相対座標への変換はuseMemoで行う）
-                setCardPositionsAbsolute((prev) => ({
-                  ...prev,
-                  [id]: { x, y },
-                }));
+                drag.registerCardPosition(id, x, y);
               }}
             />
           );
@@ -426,45 +247,28 @@ export default function MahjongTable({
           <PotArea
             pot={pot}
             variables={variables}
+            isHighlighted={drag.snapTargetIdState === "__pot__"}
             onDragStart={handleDragStart}
-            onDragUpdate={handleDragUpdate}
-            onDragEnd={handleDragEnd}
+            onDragUpdate={drag.handleDragUpdate}
+            onDragEnd={drag.handleDragEnd}
             onPositionMeasured={(x, y) => {
-              // 絶対座標のまま保存（相対座標への変換はuseMemoで行う）
-              setPotPositionAbsolute({ x, y });
+              drag.registerPotPosition(x, y);
             }}
           />
         )}
       </View>
 
-      {/* 矢印の描画（画面全体に対して絶対配置） */}
-      {dragState.isDragging && (
-        <Svg
-          style={styles.arrowOverlay}
-          width={SCREEN_WIDTH}
-          height={SCREEN_HEIGHT}
-          viewBox={`0 0 ${SCREEN_WIDTH} ${SCREEN_HEIGHT}`}
-          pointerEvents="none"
-        >
-          <Line
-            x1={dragState.startX}
-            y1={dragState.startY}
-            x2={dragState.currentX}
-            y2={dragState.currentY}
-            stroke="#3b82f6"
-            strokeWidth="3"
-          />
-          <Polygon
-            points={calculateArrowHead(
-              dragState.startX,
-              dragState.startY,
-              dragState.currentX,
-              dragState.currentY
-            )}
-            fill="#3b82f6"
-          />
-        </Svg>
-      )}
+      {/* 流体矢印の描画 */}
+      <FluidArrow
+        phase={drag.visual.phase}
+        startX={drag.visual.startX}
+        startY={drag.visual.startY}
+        currentX={drag.visual.currentX}
+        currentY={drag.visual.currentY}
+        snapTargetId={drag.visual.snapTargetId}
+        containerWidth={drag.containerSize.width}
+        containerHeight={drag.containerSize.height}
+      />
 
       {/* 支払いモーダル */}
       {paymentModal && (
@@ -522,13 +326,5 @@ const styles = StyleSheet.create({
     flex: 1,
     position: "relative",
     paddingVertical: 20,
-  },
-  arrowOverlay: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    zIndex: 1000,
   },
 });
