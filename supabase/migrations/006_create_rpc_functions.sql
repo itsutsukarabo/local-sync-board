@@ -89,7 +89,7 @@ BEGIN
   IF old_state IS NOT NULL THEN
     FOR k IN SELECT jsonb_object_keys(old_state)
     LOOP
-      IF NOT k LIKE '__%__' AND NOT result ? k THEN
+      IF LEFT(k, 2) != '__' AND NOT result ? k THEN
         result := jsonb_set(result, ARRAY[k], old_state->k);
       END IF;
     END LOOP;
@@ -355,7 +355,7 @@ BEGIN
     -- 全プレイヤーをリセット
     FOR v_player_id IN SELECT jsonb_object_keys(v_state)
     LOOP
-      IF v_player_id NOT LIKE '__%__' THEN
+      IF LEFT(v_player_id, 2) != '__' THEN
         IF v_state->v_player_id ? v_var_key THEN
           v_state := jsonb_set(v_state, ARRAY[v_player_id, v_var_key], to_jsonb(v_initial));
         END IF;
@@ -561,7 +561,7 @@ BEGIN
   IF v_score_initial IS NOT NULL THEN
     FOR v_player_id IN SELECT jsonb_object_keys(v_state)
     LOOP
-      IF v_player_id NOT LIKE '__%__' THEN
+      IF LEFT(v_player_id, 2) != '__' THEN
         IF v_state->v_player_id ? 'score' THEN
           v_state := jsonb_set(v_state, ARRAY[v_player_id, 'score'], to_jsonb(v_score_initial));
         END IF;
