@@ -40,7 +40,7 @@ export default function SettlementScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { user } = useAuth();
-  const { room, refetch } = useRoomRealtime(id);
+  const { room } = useRoomRealtime(id);
   const { toasts, show: showToast, dismiss: dismissToast } = useToast();
   const { height: screenHeight } = useWindowDimensions();
 
@@ -89,7 +89,6 @@ export default function SettlementScreen() {
 
       setAdjustmentModalVisible(false);
       await loadSettlements();
-      await refetch();
     } catch (error) {
       console.error("Error saving adjustment:", error);
       showToast("error", "調整の保存に失敗しました");

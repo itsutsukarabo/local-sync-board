@@ -203,9 +203,6 @@ export default function GameScreen() {
         return;
       }
 
-      // 操作元クライアントのUIを確実に更新するため手動で再取得
-      await refetch();
-
     } catch (error) {
       console.error("Error joining game:", error);
       Alert.alert("エラー", "ゲームへの参加に失敗しました");
@@ -235,9 +232,6 @@ export default function GameScreen() {
             if (error) {
               throw error;
             }
-
-            // 操作元クライアントのUIを確実に更新するため手動で再取得
-            await refetch();
 
           } catch (error) {
             console.error("Error leaving game:", error);
@@ -275,9 +269,6 @@ export default function GameScreen() {
       }
 
       showToast("success", "支払いが完了しました");
-      // 操作元クライアントのUIを確実に更新するため手動で再取得
-      await refetch();
-
     } catch (error) {
       console.error("Error transferring score:", error);
       showToast("error", "スコアの移動に失敗しました");
@@ -302,9 +293,6 @@ export default function GameScreen() {
         Alert.alert("エラー", error.message);
         return;
       }
-
-      // 操作元クライアントのUIを確実に更新するため手動で再取得
-      await refetch();
 
     } catch (error) {
       console.error("Error joining seat:", error);
@@ -333,7 +321,6 @@ export default function GameScreen() {
           Alert.alert("エラー", error.message);
           return;
         }
-        await refetch();
       } catch (error) {
         console.error("Error joining fake seat:", error);
         Alert.alert("エラー", "ゲストの作成に失敗しました");
@@ -355,7 +342,6 @@ export default function GameScreen() {
               Alert.alert("エラー", error.message);
               return;
             }
-            await refetch();
           } catch (error) {
             console.error("Error reseating fake player:", error);
             Alert.alert("エラー", "ゲストの再着席に失敗しました");
@@ -373,7 +359,6 @@ export default function GameScreen() {
             Alert.alert("エラー", error.message);
             return;
           }
-          await refetch();
         } catch (error) {
           console.error("Error joining fake seat:", error);
           Alert.alert("エラー", "ゲストの作成に失敗しました");
@@ -398,7 +383,6 @@ export default function GameScreen() {
         return;
       }
 
-      await refetch();
     } catch (error) {
       console.error("Error force leaving seat:", error);
       Alert.alert("エラー", "強制離席に失敗しました");
@@ -423,9 +407,6 @@ export default function GameScreen() {
               return;
             }
 
-            // 操作元クライアントのUIを確実に更新するため手動で再取得
-            await refetch();
-
           } catch (error) {
             console.error("Error leaving seat:", error);
             Alert.alert("エラー", "座席からの離席に失敗しました");
@@ -447,8 +428,6 @@ export default function GameScreen() {
         return;
       }
 
-      await refetch();
-
     } catch (error) {
       console.error("Error rolling back:", error);
       showToast("error", "ロールバックに失敗しました");
@@ -466,8 +445,6 @@ export default function GameScreen() {
         showToast("error", error.message);
         return;
       }
-
-      await refetch();
 
     } catch (error) {
       console.error("Error undoing:", error);
@@ -517,7 +494,6 @@ export default function GameScreen() {
             }
 
             showToast("success", "精算が完了しました");
-            await refetch();
             await handleSettlementComplete();
           } catch (error) {
             console.error("Error executing settlement:", error);

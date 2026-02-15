@@ -38,6 +38,10 @@ export function useRoomRealtime(roomId: string | null): UseRoomRealtimeResult {
   const mountTimeRef = useRef(Date.now());
   const dbg = (_msg: string, ..._args: unknown[]) => {};
 
+  // 操作元の二重 refetch 防止用クールダウン
+  const lastManualRefetchTime = useRef<number>(0);
+  const REFETCH_COOLDOWN_MS = 500;
+
   // デバウンス用 ref
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // 前回の Promise の resolve を保持（リーク防止）
@@ -114,6 +118,7 @@ export function useRoomRealtime(roomId: string | null): UseRoomRealtimeResult {
             setRoom(roomData);
             // 成功したらエラーと失敗カウントをリセット
             consecutiveFailuresRef.current = 0;
+            lastManualRefetchTime.current = Date.now();
             if (error) setError(null);
             // REST で取得できているなら接続警告バナーも解除
             markReconnected();
@@ -213,8 +218,24 @@ export function useRoomRealtime(roomId: string | null): UseRoomRealtimeResult {
             table: "rooms",
             filter: `id=eq.${roomId}`,
           },
-          () => {
-            refetchRef.current();
+          (payload) => {
+            // 直近の手動 refetch でデータ取得済みならスキップ（二重取得防止）
+            const elapsed = Date.now() - lastManualRefetchTime.current;
+            if (elapsed < REFETCH_COOLDOWN_MS) {
+              return;
+            }
+
+            const newRoom = payload.new;
+            // ペイロードが完全な Room データを含むか検証（REPLICA IDENTITY FULL が必要）
+            if (newRoom && newRoom.id && newRoom.current_state && newRoom.template) {
+              const roomData = newRoom as Room;
+              roomData.template = migrateTemplate(roomData.template);
+              setRoom(roomData);
+              markReconnected();
+            } else {
+              // 不完全な場合はフォールバックで refetch
+              refetchRef.current();
+            }
           }
         )
         .on(
