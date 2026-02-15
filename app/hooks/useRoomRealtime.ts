@@ -152,11 +152,8 @@ export function useRoomRealtime(roomId: string | null): UseRoomRealtimeResult {
   useEffect(() => {
     dbg("useEffect fired, roomId =", roomId);
     if (!roomId) {
-      console.warn(
-        `[useRoomRealtime] roomId is falsy (${roomId}), setting room=null. This may cause "ルームが見つかりません" screen.`
-      );
-      setRoom(null);
-      setLoading(false);
+      // expo-router の useLocalSearchParams は初回レンダーで undefined を返すことがある。
+      // その場合は loading 状態を維持し、room=null にしない（「ルームが見つかりません」防止）。
       return;
     }
 
