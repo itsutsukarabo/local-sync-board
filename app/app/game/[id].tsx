@@ -574,16 +574,6 @@ export default function GameScreen() {
         </View>
       )}
 
-      {/* 履歴ログ */}
-      <HistoryLog
-        recentLog={recentLog}
-        roomId={room.id}
-        onRollback={handleRollback}
-        onUndo={handleUndo}
-        isHost={isHost}
-        settlementCount={settlementCount}
-      />
-
       {/* メインコンテンツ */}
       {layoutMode === "mahjong" ? (
         // 麻雀モード: スクロール可能なレイアウト + 座席選択システム
@@ -682,6 +672,16 @@ export default function GameScreen() {
           )}
         </ScrollView>
       )}
+
+      {/* 履歴ログ */}
+      <HistoryLog
+        recentLog={recentLog}
+        roomId={room.id}
+        onRollback={handleRollback}
+        onUndo={handleUndo}
+        isHost={isHost}
+        settlementCount={settlementCount}
+      />
       <Toast toasts={toasts} onDismiss={dismissToast} />
     </SafeAreaView>
     </GestureDetector>
