@@ -34,11 +34,17 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
     if (!user) {
       // 未認証の場合、認証グループ以外にいたらwelcomeへ
       if (!inAuthGroup) {
+        console.warn(
+          `[AuthGuard] !user でリダイレクト実行: segments=${JSON.stringify(segments)}, profileLoading=${profileLoading}`
+        );
         router.replace("/(auth)/welcome");
       }
     } else if (user && !profile?.display_name) {
       // 認証済みだがニックネーム未設定の場合、welcomeへ
       if (!inAuthGroup) {
+        console.warn(
+          `[AuthGuard] !display_name でリダイレクト実行: segments=${JSON.stringify(segments)}, userId=${user.id}`
+        );
         router.replace("/(auth)/welcome");
       }
     } else if (user && profile?.display_name) {

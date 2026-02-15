@@ -147,7 +147,9 @@ export function useRoomRealtime(roomId: string | null): UseRoomRealtimeResult {
   useEffect(() => {
     dbg("useEffect fired, roomId =", roomId);
     if (!roomId) {
-      dbg("roomId is falsy → setLoading(false)");
+      console.warn(
+        `[useRoomRealtime] roomId is falsy (${roomId}), setting room=null. This may cause "ルームが見つかりません" screen.`
+      );
       setRoom(null);
       setLoading(false);
       return;
