@@ -53,7 +53,7 @@ export default function GameScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { user } = useAuth();
-  const { room, loading, error, refetch, isRealtimeDisconnected } = useRoomRealtime(id);
+  const { room, loading, error, refetch, isRealtimeDisconnected, isReconnected } = useRoomRealtime(id);
   const { connectionStatuses } = useConnectionMonitor(
     id ?? null,
     user?.id ?? null,
@@ -574,6 +574,14 @@ export default function GameScreen() {
           </Text>
         </View>
       )}
+      {/* 再接続成功バナー */}
+      {isReconnected && !isRealtimeDisconnected && (
+        <View style={styles.reconnectedBanner}>
+          <Text style={styles.reconnectedBannerText}>
+            再接続しました！
+          </Text>
+        </View>
+      )}
 
       {/* メインコンテンツ */}
       {layoutMode === "mahjong" ? (
@@ -720,6 +728,18 @@ const styles = StyleSheet.create({
   connectionBannerText: {
     fontSize: 13,
     color: "#92400e",
+    textAlign: "center",
+  },
+  reconnectedBanner: {
+    backgroundColor: "#d1fae5",
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "#6ee7b7",
+  },
+  reconnectedBannerText: {
+    fontSize: 13,
+    color: "#065f46",
     textAlign: "center",
   },
   header: {

@@ -16,6 +16,8 @@ interface UseRoomRealtimeResult {
   refetch: () => Promise<void>;
   /** Realtime チャンネルが切断中・エラー中の場合 true */
   isRealtimeDisconnected: boolean;
+  /** 再接続成功後、一時的に true になる（5秒間） */
+  isReconnected: boolean;
 }
 
 /**
@@ -28,6 +30,10 @@ export function useRoomRealtime(roomId: string | null): UseRoomRealtimeResult {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const [isRealtimeDisconnected, setIsRealtimeDisconnected] = useState(false);
+  const [isReconnected, setIsReconnected] = useState(false);
+  const reconnectedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 切断を経験したかどうか（初回接続では再接続バナーを出さない）
+  const hasBeenDisconnectedRef = useRef(false);
   // デバッグ用ログ（通常は無効化。調査時に console.log に切り替え）
   const mountTimeRef = useRef(Date.now());
   const dbg = (_msg: string, ..._args: unknown[]) => {};
@@ -39,6 +45,34 @@ export function useRoomRealtime(roomId: string | null): UseRoomRealtimeResult {
   // 連続 refetch 失敗カウント（一時的な通信エラーでは即座にエラー表示しない）
   const consecutiveFailuresRef = useRef(0);
   const REFETCH_FAILURE_THRESHOLD = 3;
+  // チャンネル再構築用のトリガー
+  const [channelRebuildKey, setChannelRebuildKey] = useState(0);
+  // チャンネル再購読リトライ回数
+  const resubscribeAttemptsRef = useRef(0);
+  const MAX_RESUBSCRIBE_ATTEMPTS = 3;
+
+  // 切断→復帰時にバナーを5秒間表示するヘルパー
+  const markReconnected = useCallback(() => {
+    if (!hasBeenDisconnectedRef.current) return;
+    setIsRealtimeDisconnected(false);
+    setIsReconnected(true);
+    hasBeenDisconnectedRef.current = false;
+    if (reconnectedTimerRef.current) clearTimeout(reconnectedTimerRef.current);
+    reconnectedTimerRef.current = setTimeout(() => {
+      setIsReconnected(false);
+    }, 5_000);
+  }, []);
+
+  const markDisconnected = useCallback(() => {
+    setIsRealtimeDisconnected(true);
+    hasBeenDisconnectedRef.current = true;
+    // 再接続バナーが出ている最中に再切断した場合は消す
+    if (reconnectedTimerRef.current) {
+      clearTimeout(reconnectedTimerRef.current);
+      reconnectedTimerRef.current = null;
+    }
+    setIsReconnected(false);
+  }, []);
 
   // 手動でデータを再取得する関数（デバウンス300ms + タイムアウト10秒）
   const refetch = useCallback(async () => {
@@ -81,6 +115,8 @@ export function useRoomRealtime(roomId: string | null): UseRoomRealtimeResult {
             // 成功したらエラーと失敗カウントをリセット
             consecutiveFailuresRef.current = 0;
             if (error) setError(null);
+            // REST で取得できているなら接続警告バナーも解除
+            markReconnected();
           }
         } catch (err) {
           console.error("Error refetching room:", err);
@@ -195,16 +231,38 @@ export function useRoomRealtime(roomId: string | null): UseRoomRealtimeResult {
         .subscribe((status, err) => {
           dbg("channel status:", status, err);
           if (status === "SUBSCRIBED") {
-            setIsRealtimeDisconnected(false);
+            markReconnected();
+            resubscribeAttemptsRef.current = 0;
             // 再接続後はデータを最新化
             refetchRef.current();
           } else if (status === "CHANNEL_ERROR") {
-            console.error("Realtime channel error:", err);
-            setIsRealtimeDisconnected(true);
+            console.error(
+              "Realtime channel error:",
+              err ?? "WebSocket connection lost"
+            );
+            markDisconnected();
+            resubscribeAttemptsRef.current += 1;
+            if (resubscribeTimer) clearTimeout(resubscribeTimer);
+            if (resubscribeAttemptsRef.current >= MAX_RESUBSCRIBE_ATTEMPTS) {
+              // リトライ上限超過 → チャンネルを破棄して新しく作り直す
+              console.warn(
+                `Resubscribe failed ${MAX_RESUBSCRIBE_ATTEMPTS} times, rebuilding channel`
+              );
+              resubscribeAttemptsRef.current = 0;
+              resubscribeTimer = setTimeout(() => {
+                setChannelRebuildKey((k) => k + 1);
+              }, 3_000);
+            } else {
+              // 通常のリトライ
+              resubscribeTimer = setTimeout(() => {
+                if (channel) {
+                  channel.subscribe();
+                }
+              }, 5_000);
+            }
           } else if (status === "TIMED_OUT") {
             console.error("Realtime channel timed out, retrying...");
-            setIsRealtimeDisconnected(true);
-            // タイムアウト時は少し待ってから再購読を試みる
+            markDisconnected();
             if (resubscribeTimer) clearTimeout(resubscribeTimer);
             resubscribeTimer = setTimeout(() => {
               if (channel) {
@@ -213,7 +271,7 @@ export function useRoomRealtime(roomId: string | null): UseRoomRealtimeResult {
             }, 5_000);
           } else if (status === "CLOSED") {
             dbg("channel closed");
-            setIsRealtimeDisconnected(true);
+            markDisconnected();
           }
         });
     };
@@ -226,12 +284,14 @@ export function useRoomRealtime(roomId: string | null): UseRoomRealtimeResult {
     return () => {
       dbg("cleanup: removing channel");
       if (resubscribeTimer) clearTimeout(resubscribeTimer);
+      if (reconnectedTimerRef.current) clearTimeout(reconnectedTimerRef.current);
       if (channel) {
         supabase.removeChannel(channel);
       }
       setIsRealtimeDisconnected(false);
+      setIsReconnected(false);
     };
-  }, [roomId]);
+  }, [roomId, channelRebuildKey]);
 
   // アプリ復帰時にデータを再取得
   useEffect(() => {
@@ -243,5 +303,5 @@ export function useRoomRealtime(roomId: string | null): UseRoomRealtimeResult {
     return () => subscription.remove();
   }, [roomId]);
 
-  return { room, loading, error, refetch, isRealtimeDisconnected };
+  return { room, loading, error, refetch, isRealtimeDisconnected, isReconnected };
 }
