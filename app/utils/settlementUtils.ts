@@ -45,21 +45,27 @@ export function canExecuteSettlement(
     return { canExecute: false, reason: "score変数が定義されていません" };
   }
 
-  // 合計点チェック: initial × 着席者数
-  const expectedTotal = scoreVar.initial * seatedUserIds.length;
-  // 供託金も含めた合計
+  // 供託金チェック: Potのscoreが0でなければ精算不可
   const potScore = currentState.__pot__?.score ?? 0;
+  if (potScore !== 0) {
+    return {
+      canExecute: false,
+      reason: `供託金が残っています（${potScore.toLocaleString()}）。回収してから精算してください`,
+    };
+  }
+
+  // 合計点チェック: initial × 着席者数（Pot除外）
+  const expectedTotal = scoreVar.initial * seatedUserIds.length;
   const playerTotal = seatedUserIds.reduce((sum, uid) => {
     const playerState = currentState[uid];
     if (!playerState) return sum;
     return sum + ((playerState.score as number) || 0);
   }, 0);
-  const actualTotal = playerTotal + potScore;
 
-  if (actualTotal !== expectedTotal) {
+  if (playerTotal !== expectedTotal) {
     return {
       canExecute: false,
-      reason: `合計点が一致しません（期待: ${expectedTotal.toLocaleString()}, 実際: ${actualTotal.toLocaleString()}）`,
+      reason: `合計点が一致しません（期待: ${expectedTotal.toLocaleString()}, 実際: ${playerTotal.toLocaleString()}）`,
     };
   }
 
