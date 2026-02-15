@@ -97,13 +97,14 @@ export default function GameScreen() {
   const isUserSeated =
     room?.seats?.some((seat) => seat && seat.userId === user?.id) || false;
 
-  // 精算件数を取得（room_settlements テーブルから非同期で取得）
+  // 精算件数を取得（room更新時に再取得し、非ホストにもボタンを表示）
+  const latestLogId = room?.current_state?.__recent_log__?.slice(-1)?.[0]?.id;
   useEffect(() => {
     if (!room?.id) return;
     fetchSettlements(room.id).then(({ settlements }) => {
       setSettlementCount(settlements.length);
     });
-  }, [room?.id]);
+  }, [room?.id, latestLogId]);
 
   // 精算完了時にカウントを更新
   const handleSettlementComplete = useCallback(async () => {
