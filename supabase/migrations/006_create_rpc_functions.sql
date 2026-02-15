@@ -430,6 +430,10 @@ BEGIN
   -- エントリ削除
   DELETE FROM public.room_history WHERE id = v_entry.id;
 
+  -- 対応する精算レコードも削除（精算操作の undo 時）
+  DELETE FROM public.room_settlements
+  WHERE room_id = p_room_id AND created_at = v_entry.created_at;
+
   -- __recent_log__: undo した操作メッセージを除去
   v_recent_log := COALESCE(v_state->'__recent_log__', '[]'::jsonb);
   v_recent_log := (
@@ -496,6 +500,10 @@ BEGIN
 
   -- 対象エントリ以降の履歴を削除
   DELETE FROM public.room_history
+  WHERE room_id = p_room_id AND created_at >= v_entry.created_at;
+
+  -- 対象エントリ以降の精算レコードも削除
+  DELETE FROM public.room_settlements
   WHERE room_id = p_room_id AND created_at >= v_entry.created_at;
 
   -- ロールバック操作自体を履歴に追加
