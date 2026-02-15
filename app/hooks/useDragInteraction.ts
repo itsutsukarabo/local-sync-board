@@ -41,6 +41,8 @@ export interface DragInteraction {
   handleDragEnd: (absX: number, absY: number) => void;
   /** カード位置の登録 */
   registerCardPosition: (id: string, absX: number, absY: number) => void;
+  /** カード位置の登録解除 */
+  unregisterCardPosition: (id: string) => void;
   /** Pot位置の登録 */
   registerPotPosition: (absX: number, absY: number) => void;
   /** コンテナレイアウト変更ハンドラ */
@@ -131,6 +133,10 @@ export function useDragInteraction(options: {
     },
     []
   );
+
+  const unregisterCardPosition = useCallback((id: string) => {
+    delete cardPositionsRef.current[id];
+  }, []);
 
   const registerPotPosition = useCallback((absX: number, absY: number) => {
     potPositionRef.current = { x: absX, y: absY };
@@ -352,6 +358,7 @@ export function useDragInteraction(options: {
     handleDragUpdate,
     handleDragEnd,
     registerCardPosition,
+    unregisterCardPosition,
     registerPotPosition,
     onContainerLayout,
     setContainerOffset: setContainerOffsetFn,

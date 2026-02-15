@@ -238,6 +238,9 @@ export default function MahjongTable({
               onPositionMeasured={(id, x, y) => {
                 drag.registerCardPosition(id, x, y);
               }}
+              onPositionUnmount={(id) => {
+                drag.unregisterCardPosition(id);
+              }}
             />
           );
         })}

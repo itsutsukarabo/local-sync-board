@@ -30,6 +30,7 @@ interface MahjongPlayerCardProps {
   onDragUpdate: (x: number, y: number) => void;
   onDragEnd: (x: number, y: number) => void;
   onPositionMeasured?: (playerId: string, x: number, y: number) => void;
+  onPositionUnmount?: (playerId: string) => void;
 }
 
 function formatDisconnectSeconds(disconnectedAt: number): string {
@@ -57,6 +58,7 @@ export default function MahjongPlayerCard({
   onDragUpdate,
   onDragEnd,
   onPositionMeasured,
+  onPositionUnmount,
 }: MahjongPlayerCardProps) {
   const viewRef = useRef<View>(null);
 
@@ -80,6 +82,16 @@ export default function MahjongPlayerCard({
       shadowOpacity: 0.1 + highlightProgress.value * 0.2,
     };
   });
+
+  // アンマウント時にカード位置の登録を解除
+  const onPositionUnmountRef = useRef(onPositionUnmount);
+  onPositionUnmountRef.current = onPositionUnmount;
+  useEffect(() => {
+    const id = playerId;
+    return () => {
+      onPositionUnmountRef.current?.(id);
+    };
+  }, [playerId]);
 
   // カードの位置を測定して親に通知
   useEffect(() => {
