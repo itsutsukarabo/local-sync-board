@@ -202,13 +202,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } = supabase.auth.onAuthStateChange((event, currentSession) => {
       dbg("onAuthStateChange fired, event:", event, "hasSession:", !!currentSession, "hasUser:", !!currentSession?.user);
 
-      // ユーザーが消える遷移を検知（認証ガードリダイレクトの根本原因の可能性）
-      if (!currentSession?.user) {
-        console.warn(
-          `[AuthContext] onAuthStateChange: user が null になりました。event=${event}, hasSession=${!!currentSession}`
-        );
-      }
-
       // getSession タイムアウト時のフォールバック用に記録
       authStateSession = currentSession;
       authStateResolved = true;
