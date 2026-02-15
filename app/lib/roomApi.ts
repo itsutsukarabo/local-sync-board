@@ -7,8 +7,6 @@ import { supabase } from "./supabase";
 import {
   Room,
   GameTemplate,
-  CreateRoomRequest,
-  JoinRoomRequest,
   GameStateSnapshot,
   SeatInfo,
   Settlement,
@@ -26,93 +24,22 @@ const apiLog = (fn: string, params?: Record<string, unknown>) => {
 };
 
 /**
- * UUID生成（簡易版）
+ * RPC呼び出しの共通ラッパー
+ * 戻り値 JSONB {success: true} or {error: "メッセージ"} をパース
  */
-function generateUUID(): string {
-  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0;
-    const v = c === "x" ? r : (r & 0x3) | 0x8;
-    return v.toString(16);
-  });
-}
-
-/**
- * スナップショット復元時、着席中だが変数データがないプレイヤーに初期値を補完する
- */
-function ensureSeatedPlayersHaveState(
-  restoredState: GameStateSnapshot,
-  seats: (SeatInfo | null)[],
-  template: GameTemplate,
-  currentState?: Record<string, any>
-): GameStateSnapshot {
-  const result = { ...restoredState };
-
-  // 1. 着席中プレイヤーの補完（既存ロジック）
-  for (const seat of seats) {
-    if (seat?.userId && !result[seat.userId]) {
-      const initialState: Record<string, number> = {};
-      for (const v of template.variables) {
-        initialState[v.key] = v.initial;
-      }
-      result[seat.userId] = initialState;
-    }
+async function callRpc(
+  fnName: string,
+  params: Record<string, unknown>
+): Promise<{ error: Error | null }> {
+  const { data, error: rpcError } = await supabase.rpc(fnName, params);
+  if (rpcError) {
+    console.error(`RPC ${fnName} failed:`, rpcError);
+    return { error: new Error(rpcError.message) };
   }
-
-  // 2. 復元前に current_state にいたプレイヤーの補完（離席者のデータを保持）
-  if (currentState) {
-    for (const key of Object.keys(currentState)) {
-      if (key.startsWith("__")) continue;
-      if (!result[key]) {
-        result[key] = currentState[key];
-      }
-    }
+  if (data?.error) {
+    return { error: new Error(data.error) };
   }
-
-  return result;
-}
-
-/**
- * 予約キーを除いたスナップショットを作成（ディープコピー）
- */
-function createSnapshot(currentState: any): GameStateSnapshot {
-  const { __history__, __writeId__, __settlements__, __recent_log__, ...rest } = currentState;
-  // ディープコピーで参照を切る
-  return JSON.parse(JSON.stringify(rest)) as GameStateSnapshot;
-}
-
-/** __recent_log__ に追加するエントリ（軽量: snapshot なし） */
-interface RecentLogEntry {
-  id: string;
-  timestamp: number;
-  message: string;
-}
-
-/** __recent_log__ のリングバッファ更新（最新5件を保持） */
-const RECENT_LOG_MAX = 5;
-function pushRecentLog(currentState: any, entry: RecentLogEntry): void {
-  const log: RecentLogEntry[] = currentState.__recent_log__ || [];
-  log.push(entry);
-  if (log.length > RECENT_LOG_MAX) {
-    currentState.__recent_log__ = log.slice(-RECENT_LOG_MAX);
-  } else {
-    currentState.__recent_log__ = log;
-  }
-}
-
-/**
- * room_history テーブルに履歴を INSERT
- */
-async function insertHistory(
-  roomId: string,
-  message: string,
-  snapshot: GameStateSnapshot
-): Promise<void> {
-  const { error } = await supabase
-    .from("room_history")
-    .insert({ room_id: roomId, message, snapshot });
-  if (error) {
-    console.error("Error inserting history:", error);
-  }
+  return { error: null };
 }
 
 /**
@@ -424,8 +351,7 @@ export async function updateRoomStatus(
 }
 
 /**
- * スコアを移動（トランザクション更新 + 履歴保存）
- * 複数変数を一括で移動可能
+ * スコアを移動（DB側RPCで原子的に処理）
  * @param roomId - ルームID
  * @param fromId - 送信元ID（"__pot__" またはユーザーID）
  * @param toId - 送信先ID（"__pot__" またはユーザーID）
@@ -442,146 +368,14 @@ export async function transferScore(
   toName?: string
 ): Promise<{ error: Error | null }> {
   apiLog("transferScore", { from: fromName ?? fromId, to: toName ?? toId, transfers });
-  const MAX_RETRIES = 5;
-
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    try {
-      // 1. 最新の current_state とテンプレートを取得（重要！通信ラグ対策）
-      const { data: room, error: fetchError } = await supabase
-        .from("rooms")
-        .select("current_state, template")
-        .eq("id", roomId)
-        .single();
-
-      if (fetchError) {
-        throw fetchError;
-      }
-
-      if (!room) {
-        throw new Error("ルームが見つかりません");
-      }
-
-      // 2. 操作前のスナップショットを作成（履歴用）
-      const beforeSnapshot = createSnapshot(room.current_state);
-
-      // 3. 最新データを元に計算（全transferを一括処理）
-      const currentState = { ...room.current_state };
-
-      for (const { variable, amount } of transfers) {
-        // Potからの移動
-        if (fromId === "__pot__") {
-          if (
-            !currentState.__pot__ ||
-            (currentState.__pot__[variable] || 0) < amount
-          ) {
-            throw new Error("供託金が不足しています");
-          }
-          currentState.__pot__[variable] -= amount;
-
-          if (!currentState[toId]) {
-            throw new Error("送信先プレイヤーが見つかりません");
-          }
-          currentState[toId][variable] =
-            ((currentState[toId][variable] as number) || 0) + amount;
-        }
-        // Potへの移動
-        else if (toId === "__pot__") {
-          if (!currentState[fromId]) {
-            throw new Error("送信元プレイヤーが見つかりません");
-          }
-          const fromValue = (currentState[fromId][variable] as number) || 0;
-
-          currentState[fromId][variable] = fromValue - amount;
-
-          if (!currentState.__pot__) {
-            currentState.__pot__ = {};
-          }
-          currentState.__pot__[variable] =
-            (currentState.__pot__[variable] || 0) + amount;
-        }
-        // プレイヤー間の移動
-        else {
-          if (!currentState[fromId] || !currentState[toId]) {
-            throw new Error("プレイヤーが見つかりません");
-          }
-
-          const fromValue = (currentState[fromId][variable] as number) || 0;
-
-          currentState[fromId][variable] = fromValue - amount;
-          currentState[toId][variable] =
-            ((currentState[toId][variable] as number) || 0) + amount;
-        }
-      }
-
-      // 4. 履歴エントリを作成
-      const displayFromName =
-        fromName || (fromId === "__pot__" ? "供託回収" : fromId.substring(0, 8));
-      const displayToName =
-        toName || (toId === "__pot__" ? "供託" : toId.substring(0, 8));
-
-      // 変数ごとの移動内容をまとめてメッセージ化
-      const transferDetails = transfers
-        .map(({ variable, amount }) => {
-          const variableLabel =
-            room.template?.variables?.find(
-              (v: { key: string; label: string }) => v.key === variable
-            )?.label || variable;
-          return `${variableLabel} ${amount.toLocaleString()}`;
-        })
-        .join(", ");
-
-      const historyMessage = `${displayFromName} → ${displayToName}: ${transferDetails}`;
-      const entryId = generateUUID();
-
-      // 5. __recent_log__ を更新（軽量プレビュー用）
-      pushRecentLog(currentState, { id: entryId, timestamp: Date.now(), message: historyMessage });
-
-      // 6. 一意の書き込みIDを付与（CAS検証用）
-      const writeId = generateUUID();
-      currentState.__writeId__ = writeId;
-
-      // 7. Supabaseに保存
-      const { error: updateError } = await supabase
-        .from("rooms")
-        .update({ current_state: currentState })
-        .eq("id", roomId);
-
-      if (updateError) {
-        throw updateError;
-      }
-
-      // 8. 書き込み後検証
-      const { data: verify } = await supabase
-        .from("rooms")
-        .select("current_state")
-        .eq("id", roomId)
-        .single();
-      if (verify?.current_state?.__writeId__ === writeId) {
-        // 成功確定 → 履歴を別テーブルに保存（非同期、失敗しても操作自体は成功）
-        await insertHistory(roomId, historyMessage, beforeSnapshot);
-        return { error: null };
-      }
-      // 別クライアントに上書きされた → 最新stateを再取得してリトライ
-      if (attempt < MAX_RETRIES) {
-        await new Promise((r) => setTimeout(r, 100 * Math.pow(2, attempt)));
-        continue;
-      }
-      // 最終リトライでも競合が解消されなかった → エラーを返す
-      return { error: new Error("書き込み競合が解消されませんでした。再度お試しください。") };
-    } catch (error) {
-      if (attempt === MAX_RETRIES) {
-        console.error("Error transferring score:", error);
-        return {
-          error:
-            error instanceof Error
-              ? error
-              : new Error("スコアの移動に失敗しました"),
-        };
-      }
-      await new Promise((r) => setTimeout(r, 100 * Math.pow(2, attempt)));
-    }
-  }
-  return { error: new Error("スコアの移動に失敗しました") };
+  return callRpc("rpc_transfer_score", {
+    p_room_id: roomId,
+    p_from_id: fromId,
+    p_to_id: toId,
+    p_transfers: transfers,
+    p_from_name: fromName ?? null,
+    p_to_name: toName ?? null,
+  });
 }
 
 /**
@@ -864,92 +658,19 @@ export async function leaveSeat(
 }
 
 /**
- * 指定した履歴IDの時点にロールバック
+ * 指定した履歴IDの時点にロールバック（DB側RPCで原子的に処理）
  * @param roomId - ルームID
  * @param historyId - ロールバック先の履歴ID
- * @returns エラー情報
  */
 export async function rollbackTo(
   roomId: string,
   historyId: string
 ): Promise<{ error: Error | null }> {
   apiLog("rollbackTo", { roomId, historyId });
-  try {
-    // 1. 最新のルーム情報を取得
-    const { data: room, error: fetchError } = await supabase
-      .from("rooms")
-      .select("current_state, template, seats")
-      .eq("id", roomId)
-      .single();
-
-    if (fetchError) {
-      throw fetchError;
-    }
-
-    if (!room) {
-      throw new Error("ルームが見つかりません");
-    }
-
-    // 2. room_history テーブルから対象エントリを取得
-    const { data: targetEntry, error: histError } = await supabase
-      .from("room_history")
-      .select("*")
-      .eq("id", historyId)
-      .eq("room_id", roomId)
-      .single();
-
-    if (histError || !targetEntry) {
-      throw new Error("指定された履歴が見つかりません");
-    }
-
-    const currentState = room.current_state;
-
-    // 3. 見つかった要素のsnapshotを展開
-    const restoredState = ensureSeatedPlayersHaveState(
-      { ...targetEntry.snapshot },
-      room.seats ?? [],
-      room.template,
-      currentState
-    );
-
-    // 4. ロールバック前の状態を履歴に保存
-    const rollbackMessage = `ロールバック (${new Date(targetEntry.created_at).toLocaleTimeString("ja-JP")})`;
-    const beforeSnapshot = createSnapshot(currentState);
-
-    // 5. 対象エントリより新しい履歴を削除
-    await supabase
-      .from("room_history")
-      .delete()
-      .eq("room_id", roomId)
-      .gte("created_at", targetEntry.created_at);
-
-    // 6. ロールバック操作自体を履歴に追加
-    await insertHistory(roomId, rollbackMessage, beforeSnapshot);
-
-    // 7. 新しいcurrent_stateを構築（__recent_log__ を更新）
-    const newState = { ...restoredState };
-    pushRecentLog(newState, { id: generateUUID(), timestamp: Date.now(), message: rollbackMessage });
-
-    // 8. Supabaseに保存
-    const { error: updateError } = await supabase
-      .from("rooms")
-      .update({ current_state: newState })
-      .eq("id", roomId);
-
-    if (updateError) {
-      throw updateError;
-    }
-
-    return { error: null };
-  } catch (error) {
-    console.error("Error rolling back:", error);
-    return {
-      error:
-        error instanceof Error
-          ? error
-          : new Error("ロールバックに失敗しました"),
-    };
-  }
+  return callRpc("rpc_rollback_to", {
+    p_room_id: roomId,
+    p_history_id: historyId,
+  });
 }
 
 /**
@@ -1039,7 +760,7 @@ export async function updateTemplate(
 }
 
 /**
- * プレイヤーのスコアを強制編集（ホスト用）
+ * プレイヤーのスコアを強制編集（DB側RPCで原子的に処理）
  * @param roomId - ルームID
  * @param playerId - 対象プレイヤーのID
  * @param updates - 上書きする変数と値のマップ
@@ -1052,78 +773,16 @@ export async function forceEditScore(
   displayName?: string
 ): Promise<{ error: Error | null }> {
   apiLog("forceEditScore", { roomId, player: displayName ?? playerId, updates });
-  try {
-    // 1. 最新の current_state とテンプレートを取得
-    const { data: room, error: fetchError } = await supabase
-      .from("rooms")
-      .select("current_state, template")
-      .eq("id", roomId)
-      .single();
-
-    if (fetchError) {
-      throw fetchError;
-    }
-
-    if (!room) {
-      throw new Error("ルームが見つかりません");
-    }
-
-    const currentState = { ...room.current_state };
-
-    if (!currentState[playerId]) {
-      throw new Error("プレイヤーが見つかりません");
-    }
-
-    // 2. 操作前のスナップショットを作成
-    const beforeSnapshot = createSnapshot(currentState);
-
-    // 3. 値を上書き
-    for (const [key, value] of Object.entries(updates)) {
-      currentState[playerId][key] = value;
-    }
-
-    // 4. 履歴メッセージを作成
-    const details = Object.entries(updates)
-      .map(([key, value]) => {
-        const label =
-          room.template?.variables?.find(
-            (v: { key: string; label: string }) => v.key === key
-          )?.label || key;
-        return `${label}: ${value.toLocaleString()}`;
-      })
-      .join(", ");
-
-    const historyMessage = `強制編集: ${displayName || playerId.substring(0, 8)} - ${details}`;
-
-    // 5. __recent_log__ を更新して保存
-    pushRecentLog(currentState, { id: generateUUID(), timestamp: Date.now(), message: historyMessage });
-
-    const { error: updateError } = await supabase
-      .from("rooms")
-      .update({ current_state: currentState })
-      .eq("id", roomId);
-
-    if (updateError) {
-      throw updateError;
-    }
-
-    // 6. 履歴を別テーブルに保存
-    await insertHistory(roomId, historyMessage, beforeSnapshot);
-
-    return { error: null };
-  } catch (error) {
-    console.error("Error force editing score:", error);
-    return {
-      error:
-        error instanceof Error
-          ? error
-          : new Error("スコアの強制編集に失敗しました"),
-    };
-  }
+  return callRpc("rpc_force_edit_score", {
+    p_room_id: roomId,
+    p_player_id: playerId,
+    p_updates: updates,
+    p_display_name: displayName ?? null,
+  });
 }
 
 /**
- * 選択した変数を全プレイヤーで初期値にリセット（供託金も含む）
+ * 選択した変数を全プレイヤーで初期値にリセット（DB側RPCで原子的に処理）
  * @param roomId - ルームID
  * @param variableKeys - リセット対象の変数キー配列
  */
@@ -1132,170 +791,23 @@ export async function resetScores(
   variableKeys: string[]
 ): Promise<{ error: Error | null }> {
   apiLog("resetScores", { roomId, variableKeys });
-  try {
-    // 1. 最新の current_state とテンプレートを取得
-    const { data: room, error: fetchError } = await supabase
-      .from("rooms")
-      .select("current_state, template")
-      .eq("id", roomId)
-      .single();
-
-    if (fetchError) {
-      throw fetchError;
-    }
-
-    if (!room) {
-      throw new Error("ルームが見つかりません");
-    }
-
-    const currentState = { ...room.current_state };
-
-    // 2. 操作前のスナップショットを作成
-    const beforeSnapshot = createSnapshot(currentState);
-
-    // 3. 全プレイヤーの選択変数を initial に上書き
-    const playerIds = Object.keys(currentState).filter(
-      (key) => !key.startsWith("__")
-    );
-    for (const playerId of playerIds) {
-      for (const varKey of variableKeys) {
-        const variable = room.template?.variables?.find(
-          (v: { key: string }) => v.key === varKey
-        );
-        if (variable) {
-          currentState[playerId][varKey] = variable.initial;
-        }
-      }
-    }
-
-    // 4. __pot__ の選択変数を 0 にリセット
-    if (currentState.__pot__) {
-      for (const varKey of variableKeys) {
-        if (currentState.__pot__[varKey] !== undefined) {
-          currentState.__pot__[varKey] = 0;
-        }
-      }
-    }
-
-    // 5. 履歴メッセージを作成
-    const labels = variableKeys
-      .map((key) => {
-        const variable = room.template?.variables?.find(
-          (v: { key: string; label: string }) => v.key === key
-        );
-        return variable?.label || key;
-      })
-      .join(", ");
-
-    const historyMessage = `リセット: ${labels}`;
-
-    // 6. __recent_log__ を更新して保存
-    pushRecentLog(currentState, { id: generateUUID(), timestamp: Date.now(), message: historyMessage });
-
-    const { error: updateError } = await supabase
-      .from("rooms")
-      .update({ current_state: currentState })
-      .eq("id", roomId);
-
-    if (updateError) {
-      throw updateError;
-    }
-
-    // 7. 履歴を別テーブルに保存
-    await insertHistory(roomId, historyMessage, beforeSnapshot);
-
-    return { error: null };
-  } catch (error) {
-    console.error("Error resetting scores:", error);
-    return {
-      error:
-        error instanceof Error
-          ? error
-          : new Error("スコアのリセットに失敗しました"),
-    };
-  }
+  return callRpc("rpc_reset_scores", {
+    p_room_id: roomId,
+    p_variable_keys: variableKeys,
+  });
 }
 
 /**
- * 直前の操作を取り消す（Undo）
+ * 直前の操作を取り消す（DB側RPCで原子的に処理）
  * @param roomId - ルームID
- * @returns エラー情報
  */
 export async function undoLast(
   roomId: string
 ): Promise<{ error: Error | null }> {
   apiLog("undoLast", { roomId });
-  try {
-    // 1. 最新のルーム情報を取得
-    const { data: room, error: fetchError } = await supabase
-      .from("rooms")
-      .select("current_state, template, seats")
-      .eq("id", roomId)
-      .single();
-
-    if (fetchError) {
-      throw fetchError;
-    }
-
-    if (!room) {
-      throw new Error("ルームが見つかりません");
-    }
-
-    // 2. room_history から最新エントリを取得
-    const { data: lastEntry, error: histError } = await supabase
-      .from("room_history")
-      .select("*")
-      .eq("room_id", roomId)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .single();
-
-    if (histError || !lastEntry) {
-      throw new Error("取り消せる操作がありません");
-    }
-
-    const currentState = room.current_state;
-
-    // 3. 最後のエントリのsnapshotを復元（着席中プレイヤー・離席者の変数データを補完）
-    const restoredState = ensureSeatedPlayersHaveState(
-      { ...lastEntry.snapshot },
-      room.seats ?? [],
-      room.template,
-      currentState
-    );
-
-    // 4. room_history から最後のエントリを削除
-    await supabase
-      .from("room_history")
-      .delete()
-      .eq("id", lastEntry.id);
-
-    // 5. 新しいcurrent_stateを構築（__recent_log__ を更新）
-    const newState = { ...restoredState };
-    // 直前のrecentLogからundoした操作を除去（あれば）
-    const recentLog = currentState.__recent_log__ || [];
-    newState.__recent_log__ = recentLog.filter(
-      (entry: any) => entry.message !== lastEntry.message
-    );
-
-    // 6. Supabaseに保存
-    const { error: updateError } = await supabase
-      .from("rooms")
-      .update({ current_state: newState })
-      .eq("id", roomId);
-
-    if (updateError) {
-      throw updateError;
-    }
-
-    return { error: null };
-  } catch (error) {
-    console.error("Error undoing:", error);
-    return {
-      error:
-        error instanceof Error ? error : new Error("取り消しに失敗しました"),
-    };
-  }
+  return callRpc("rpc_undo_last", {
+    p_room_id: roomId,
+  });
 }
 
 /**
@@ -1615,7 +1127,7 @@ export async function reseatFakePlayer(
 }
 
 /**
- * 精算結果を保存し、スコアを初期値にリセット
+ * 精算結果を保存し、スコアを初期値にリセット（DB側RPCで原子的に処理）
  * @param roomId - ルームID
  * @param settlement - 精算結果オブジェクト
  */
@@ -1624,94 +1136,15 @@ export async function saveSettlement(
   settlement: Settlement
 ): Promise<{ error: Error | null }> {
   apiLog("saveSettlement", { roomId });
-  try {
-    // 1. 最新の current_state とテンプレートを取得
-    const { data: room, error: fetchError } = await supabase
-      .from("rooms")
-      .select("current_state, template")
-      .eq("id", roomId)
-      .single();
-
-    if (fetchError) {
-      throw fetchError;
-    }
-
-    if (!room) {
-      throw new Error("ルームが見つかりません");
-    }
-
-    const currentState = { ...room.current_state };
-
-    // 2. 操作前のスナップショットを作成（履歴用）
-    const beforeSnapshot = createSnapshot(currentState);
-
-    // 3. score変数を初期値にリセット（他の変数はそのまま）
-    const scoreVar = room.template?.variables?.find(
-      (v: { key: string }) => v.key === "score"
-    );
-    if (scoreVar) {
-      const playerIds = Object.keys(currentState).filter(
-        (key) => !key.startsWith("__")
-      );
-      for (const playerId of playerIds) {
-        if (currentState[playerId]) {
-          currentState[playerId].score = scoreVar.initial;
-        }
-      }
-    }
-
-    // 供託金のscoreもリセット
-    if (currentState.__pot__?.score !== undefined) {
-      currentState.__pot__.score = 0;
-    }
-
-    // 4. 履歴メッセージを作成（精算結果サマリ）
-    const resultSummary = Object.values(settlement.playerResults)
-      .sort((a, b) => a.rank - b.rank)
-      .map((r) => `${r.displayName}: ${r.result >= 0 ? "+" : ""}${r.result}`)
-      .join(", ");
-
-    const historyMessage = `精算: ${resultSummary}`;
-
-    // 5. __recent_log__ を更新して保存
-    pushRecentLog(currentState, { id: generateUUID(), timestamp: Date.now(), message: historyMessage });
-
-    const { error: updateError } = await supabase
-      .from("rooms")
-      .update({ current_state: currentState })
-      .eq("id", roomId);
-
-    if (updateError) {
-      throw updateError;
-    }
-
-    // 6. 精算を別テーブルに保存
-    await supabase
-      .from("room_settlements")
-      .insert({
-        id: settlement.id,
-        room_id: roomId,
-        type: settlement.type,
-        player_results: settlement.playerResults,
-      });
-
-    // 7. 履歴を別テーブルに保存
-    await insertHistory(roomId, historyMessage, beforeSnapshot);
-
-    return { error: null };
-  } catch (error) {
-    console.error("Error saving settlement:", error);
-    return {
-      error:
-        error instanceof Error
-          ? error
-          : new Error("精算の保存に失敗しました"),
-    };
-  }
+  return callRpc("rpc_save_settlement", {
+    p_room_id: roomId,
+    p_settlement_id: settlement.id,
+    p_player_results: settlement.playerResults,
+  });
 }
 
 /**
- * 調整行を保存（スコアリセット・供託リセットなし）
+ * 調整行を保存（DB側RPCで原子的に処理、スコア変更なし）
  * @param roomId - ルームID
  * @param settlement - 調整結果オブジェクト (type="adjustment")
  */
@@ -1720,70 +1153,11 @@ export async function saveAdjustment(
   settlement: Settlement
 ): Promise<{ error: Error | null }> {
   apiLog("saveAdjustment", { roomId });
-  try {
-    // 1. 最新の current_state を取得
-    const { data: room, error: fetchError } = await supabase
-      .from("rooms")
-      .select("current_state")
-      .eq("id", roomId)
-      .single();
-
-    if (fetchError) {
-      throw fetchError;
-    }
-
-    if (!room) {
-      throw new Error("ルームが見つかりません");
-    }
-
-    const currentState = { ...room.current_state };
-
-    // 2. 操作前のスナップショットを作成（履歴用）
-    const beforeSnapshot = createSnapshot(currentState);
-
-    // 3. 履歴メッセージを作成（調整サマリ）
-    const resultSummary = Object.values(settlement.playerResults)
-      .filter((r) => r.result !== 0)
-      .map((r) => `${r.displayName}: ${r.result >= 0 ? "+" : ""}${r.result.toFixed(1)}`)
-      .join(", ");
-
-    const historyMessage = `調整: ${resultSummary}`;
-
-    // 4. __recent_log__ を更新して保存（current_state の変更は不要、精算は別テーブル）
-    pushRecentLog(currentState, { id: generateUUID(), timestamp: Date.now(), message: historyMessage });
-
-    const { error: updateError } = await supabase
-      .from("rooms")
-      .update({ current_state: currentState })
-      .eq("id", roomId);
-
-    if (updateError) {
-      throw updateError;
-    }
-
-    // 5. 精算を別テーブルに保存
-    await supabase
-      .from("room_settlements")
-      .insert({
-        id: settlement.id,
-        room_id: roomId,
-        type: settlement.type,
-        player_results: settlement.playerResults,
-      });
-
-    // 6. 履歴を別テーブルに保存
-    await insertHistory(roomId, historyMessage, beforeSnapshot);
-
-    return { error: null };
-  } catch (error) {
-    console.error("Error saving adjustment:", error);
-    return {
-      error:
-        error instanceof Error
-          ? error
-          : new Error("調整の保存に失敗しました"),
-    };
-  }
+  return callRpc("rpc_save_adjustment", {
+    p_room_id: roomId,
+    p_settlement_id: settlement.id,
+    p_player_results: settlement.playerResults,
+  });
 }
 
 // ============================================
