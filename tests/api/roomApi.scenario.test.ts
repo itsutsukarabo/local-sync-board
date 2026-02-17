@@ -1,0 +1,311 @@
+/**
+ * roomApi.ts シナリオテスト（Anonymous Auth + RLS + クライアント動的差し替え）
+ *
+ * roomApi.ts 内部の `supabase` を vi.mock で差し替え、
+ * ホスト/ゲストの操作を 1 シナリオで順番に検証する。
+ */
+import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import {
+  createServiceClient,
+  createAnonUser,
+  cleanupAnonUser,
+  type AnonUser,
+} from "../helpers/supabase";
+
+// ---- クライアント動的差し替えの仕組み ----
+
+const { getClient, setClient } = vi.hoisted(() => {
+  let client: any = null;
+  return {
+    getClient: () => client,
+    setClient: (c: any) => {
+      client = c;
+    },
+  };
+});
+
+vi.mock("../../app/lib/supabase", () => ({
+  get supabase() {
+    return getClient();
+  },
+}));
+
+// roomApi 関数（mock 適用後にインポート）
+import {
+  createRoom,
+  joinRoom,
+  joinSeat,
+  leaveSeat,
+  leaveRoom,
+  deleteRoom,
+  joinFakeSeat,
+  reseatFakePlayer,
+  removeFakePlayer,
+} from "../../app/lib/roomApi";
+import type { GameTemplate } from "../../app/types";
+
+// ---- テスト用テンプレート ----
+
+const TEST_TEMPLATE: GameTemplate = {
+  variables: [{ key: "score", label: "点数", initial: 25000 }],
+  hostPermissions: [
+    "transfer_score",
+    "finalize_game",
+    "force_edit",
+    "reset_scores",
+  ],
+  playerPermissions: ["transfer_score"],
+  layoutMode: "mahjong",
+  maxPlayers: 4,
+  potEnabled: false,
+};
+
+// ---- テスト本体 ----
+
+describe("roomApi シナリオテスト: 入室〜退室〜削除", () => {
+  let admin: SupabaseClient;
+  let host: AnonUser;
+  let guest: AnonUser;
+  let roomIdForCleanup: string | null = null;
+
+  beforeEach(async () => {
+    admin = createServiceClient();
+    host = await createAnonUser();
+    guest = await createAnonUser();
+  });
+
+  afterEach(async () => {
+    // ルームが残っていれば service_role で削除
+    if (roomIdForCleanup) {
+      await admin.from("rooms").delete().eq("id", roomIdForCleanup);
+      roomIdForCleanup = null;
+    }
+    await cleanupAnonUser(admin, guest.userId);
+    await cleanupAnonUser(admin, host.userId);
+  });
+
+  /** service_role でルーム最新状態を取得 */
+  async function getRoom(roomId: string) {
+    const { data } = await admin
+      .from("rooms")
+      .select("*")
+      .eq("id", roomId)
+      .single();
+    return data;
+  }
+
+  /** service_role でプロファイルを取得 */
+  async function getProfile(userId: string) {
+    const { data } = await admin
+      .from("profiles")
+      .select("current_room_id")
+      .eq("id", userId)
+      .single();
+    return data;
+  }
+
+  it("ホスト作成→着席→ゲスト入室→着席→離席→退室→ホスト削除", async () => {
+    // ======== 1. ホストがルームを作成 ========
+    setClient(host.client);
+    const { room, error: createError } = await createRoom(TEST_TEMPLATE);
+
+    expect(createError).toBeNull();
+    expect(room).toBeDefined();
+    expect(room.status).toBe("waiting");
+    expect(room.host_user_id).toBe(host.userId);
+    expect(room.seats).toEqual([null, null, null, null]);
+    expect(room.current_state).toEqual({});
+
+    const roomId = room.id;
+    const roomCode = room.room_code;
+    roomIdForCleanup = roomId;
+
+    // DB: ホストの current_room_id が設定済み
+    expect((await getProfile(host.userId))!.current_room_id).toBe(roomId);
+
+    // ======== 2. ホストが席 0 に座る ========
+    setClient(host.client);
+    const { room: r2, error: e2 } = await joinSeat(roomId, 0);
+
+    expect(e2).toBeNull();
+    expect(r2!.seats[0]).toMatchObject({
+      userId: host.userId,
+      status: "active",
+    });
+    expect((r2!.current_state as any)[host.userId].score).toBe(25000);
+
+    // ======== 3. ゲストがルームコードで入室 ========
+    setClient(guest.client);
+    const { room: r3, error: e3 } = await joinRoom(roomCode);
+
+    expect(e3).toBeNull();
+    expect(r3!.id).toBe(roomId);
+
+    // DB: ゲストの current_room_id が設定済み
+    expect((await getProfile(guest.userId))!.current_room_id).toBe(roomId);
+
+    // ======== 4. ゲストが席 1 に座る ========
+    setClient(guest.client);
+    const { room: r4, error: e4 } = await joinSeat(roomId, 1);
+
+    expect(e4).toBeNull();
+    expect(r4!.seats[1]).toMatchObject({
+      userId: guest.userId,
+      status: "active",
+    });
+    expect((r4!.current_state as any)[guest.userId].score).toBe(25000);
+
+    // DB: 2 人着席を確認
+    const dbAfterBoth = await getRoom(roomId);
+    expect(dbAfterBoth!.seats[0].userId).toBe(host.userId);
+    expect(dbAfterBoth!.seats[1].userId).toBe(guest.userId);
+
+    // ======== 5. ゲストが離席 ========
+    setClient(guest.client);
+    const { room: r5, error: e5 } = await leaveSeat(roomId);
+
+    expect(e5).toBeNull();
+    expect(r5!.seats[1]).toBeNull();
+
+    // DB: current_state にはまだゲストのデータが残っている
+    const dbAfterLeaveSeat = await getRoom(roomId);
+    expect(dbAfterLeaveSeat!.current_state[guest.userId]).toBeDefined();
+
+    // ======== 6. ゲストが退室 ========
+    setClient(guest.client);
+    const { error: e6 } = await leaveRoom(roomId);
+
+    expect(e6).toBeNull();
+
+    // DB: ゲストの current_room_id がクリア
+    expect((await getProfile(guest.userId))!.current_room_id).toBeNull();
+
+    // DB: current_state からゲストが削除、ホストは残存
+    const dbAfterLeave = await getRoom(roomId);
+    expect(dbAfterLeave!.current_state[guest.userId]).toBeUndefined();
+    expect(dbAfterLeave!.current_state[host.userId]).toBeDefined();
+
+    // ======== 7. ホストがルームを削除 ========
+    setClient(host.client);
+    const { error: e7 } = await deleteRoom(roomId);
+
+    expect(e7).toBeNull();
+
+    // DB: ルームが存在しない
+    const { data: gone } = await admin
+      .from("rooms")
+      .select("id")
+      .eq("id", roomId);
+    expect(gone).toHaveLength(0);
+    roomIdForCleanup = null; // 削除済み
+  });
+});
+
+// ---- 架空プレイヤー シナリオ ----
+
+describe("roomApi シナリオテスト: 架空プレイヤー追加・移動・削除", () => {
+  let admin: SupabaseClient;
+  let host: AnonUser;
+  let roomIdForCleanup: string | null = null;
+
+  beforeEach(async () => {
+    admin = createServiceClient();
+    host = await createAnonUser();
+  });
+
+  afterEach(async () => {
+    if (roomIdForCleanup) {
+      await admin.from("rooms").delete().eq("id", roomIdForCleanup);
+      roomIdForCleanup = null;
+    }
+    await cleanupAnonUser(admin, host.userId);
+  });
+
+  /** service_role でルーム最新状態を取得 */
+  async function getRoom(roomId: string) {
+    const { data } = await admin
+      .from("rooms")
+      .select("*")
+      .eq("id", roomId)
+      .single();
+    return data;
+  }
+
+  it("架空プレイヤー追加→席移動→削除", async () => {
+    // ======== 1. ホストがルームを作成 ========
+    setClient(host.client);
+    const { room, error: createError } = await createRoom(TEST_TEMPLATE);
+
+    expect(createError).toBeNull();
+    const roomId = room.id;
+    roomIdForCleanup = roomId;
+
+    // ======== 2. 架空プレイヤーを席 0 に追加 ========
+    setClient(host.client);
+    const { error: fakeError } = await joinFakeSeat(roomId, 0);
+
+    expect(fakeError).toBeNull();
+
+    const dbAfterFake = await getRoom(roomId);
+    const seat0 = dbAfterFake!.seats[0];
+    expect(seat0).not.toBeNull();
+    expect(seat0.userId).toMatch(/^fake_/);
+    expect(seat0.status).toBe("active");
+    expect(seat0.isFake).toBe(true);
+    expect(seat0.displayName).toBeDefined();
+
+    const fakeId: string = seat0.userId;
+
+    // current_state に初期スコアが設定されている
+    expect(dbAfterFake!.current_state[fakeId]).toBeDefined();
+    expect(dbAfterFake!.current_state[fakeId].score).toBe(25000);
+    expect(dbAfterFake!.current_state[fakeId].__displayName__).toBe(
+      seat0.displayName
+    );
+
+    // ======== 3. 架空プレイヤーを席 0 → 席 1 へ移動 ========
+    // まず離席させてから reseat する（joinFakeSeat は着席済みの席を空けない）
+    // removeFakePlayer は seats + current_state 両方消すので、
+    // leaveSeat 相当の操作を forceLeaveSeat で行うか、
+    // reseatFakePlayer が内部で席0→null にするわけではない。
+    // reseatFakePlayer は「離席済みの fake を別席に再着席」なので、
+    // 先に席 0 を空ける必要がある。
+    // → forceLeaveSeat で席を空け、current_state は残し、reseat で席1へ。
+
+    // 席 0 を手動で空ける（service_role で直接操作）
+    const seatsForReseat = [...dbAfterFake!.seats];
+    seatsForReseat[0] = null;
+    await admin
+      .from("rooms")
+      .update({ seats: seatsForReseat })
+      .eq("id", roomId);
+
+    setClient(host.client);
+    const { error: reseatError } = await reseatFakePlayer(roomId, fakeId, 1);
+
+    expect(reseatError).toBeNull();
+
+    const dbAfterReseat = await getRoom(roomId);
+    expect(dbAfterReseat!.seats[0]).toBeNull();
+    expect(dbAfterReseat!.seats[1]).not.toBeNull();
+    expect(dbAfterReseat!.seats[1].userId).toBe(fakeId);
+    expect(dbAfterReseat!.seats[1].isFake).toBe(true);
+
+    // current_state は維持されている
+    expect(dbAfterReseat!.current_state[fakeId]).toBeDefined();
+    expect(dbAfterReseat!.current_state[fakeId].score).toBe(25000);
+
+    // ======== 4. 架空プレイヤーを削除 ========
+    setClient(host.client);
+    const { error: removeError } = await removeFakePlayer(roomId, fakeId);
+
+    expect(removeError).toBeNull();
+
+    const dbAfterRemove = await getRoom(roomId);
+    // 席 1 が空になっている
+    expect(dbAfterRemove!.seats[1]).toBeNull();
+    // current_state からも削除されている
+    expect(dbAfterRemove!.current_state[fakeId]).toBeUndefined();
+  });
+});
