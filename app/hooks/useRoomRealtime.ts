@@ -26,6 +26,21 @@ interface UseRoomRealtimeResult {
  * @returns ルーム情報、ローディング状態、エラー
  */
 export function useRoomRealtime(roomId: string | null): UseRoomRealtimeResult {
+  // ── roomId 安定化 ──
+  // expo-router の useLocalSearchParams が一時的に undefined を返すことがあるため、
+  // 一度 truthy になった roomId は undefined に戻さない。
+  // state で管理することで useEffect の依存配列が安定し、
+  // 不要な cleanup → 再初期化（スピナー表示・チャンネル再構築）を防止する。
+  const [stableRoomId, setStableRoomId] = useState(roomId);
+  useEffect(() => {
+    if (roomId) {
+      setStableRoomId(roomId);
+    }
+  }, [roomId]);
+  // コールバック内から参照するための ref
+  const roomIdRef = useRef(stableRoomId);
+  roomIdRef.current = stableRoomId;
+
   const [room, setRoom] = useState<Room | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
@@ -37,12 +52,6 @@ export function useRoomRealtime(roomId: string | null): UseRoomRealtimeResult {
   // デバッグ用ログ（通常は無効化。調査時に console.log に切り替え）
   const mountTimeRef = useRef(Date.now());
   const dbg = (_msg: string, ..._args: unknown[]) => {};
-
-  // roomId が一時的に undefined になっても直前の有効値を使い続ける
-  const stableRoomIdRef = useRef(roomId);
-  if (roomId) {
-    stableRoomIdRef.current = roomId;
-  }
 
   // 操作元の二重 refetch 防止用クールダウン
   const lastManualRefetchTime = useRef<number>(0);
@@ -86,7 +95,7 @@ export function useRoomRealtime(roomId: string | null): UseRoomRealtimeResult {
 
   // 手動でデータを再取得する関数（デバウンス300ms + タイムアウト10秒）
   const refetch = useCallback(async () => {
-    const id = stableRoomIdRef.current;
+    const id = roomIdRef.current;
     if (!id) return;
 
     // 前回のデバウンスタイマーをクリア
@@ -158,7 +167,7 @@ export function useRoomRealtime(roomId: string | null): UseRoomRealtimeResult {
 
   // チャンネルを破棄して新しく作り直す（useEffect 再実行なし）
   const rebuildChannel = useCallback(() => {
-    const id = stableRoomIdRef.current;
+    const id = roomIdRef.current;
     if (!id) return;
 
     // 既存チャンネルを破棄
@@ -275,9 +284,8 @@ export function useRoomRealtime(roomId: string | null): UseRoomRealtimeResult {
   }, [markReconnected, markDisconnected]);
 
   useEffect(() => {
-    const effectRoomId = stableRoomIdRef.current;
-    dbg("useEffect fired, roomId =", roomId, "stableRoomId =", effectRoomId);
-    if (!effectRoomId) {
+    dbg("useEffect fired, stableRoomId =", stableRoomId);
+    if (!stableRoomId) {
       // roomId がまだ一度も有効値を持っていない場合は loading 維持
       return;
     }
@@ -293,7 +301,7 @@ export function useRoomRealtime(roomId: string | null): UseRoomRealtimeResult {
         const { data, error: fetchError } = await supabase
           .from("rooms")
           .select("*")
-          .eq("id", effectRoomId)
+          .eq("id", stableRoomId)
           .single();
         dbg("supabase query END, hasData:", !!data, "hasError:", !!fetchError);
 
@@ -323,7 +331,7 @@ export function useRoomRealtime(roomId: string | null): UseRoomRealtimeResult {
 
     // 初期化
     fetchInitialData();
-    setupRealtimeSubscriptionFn(effectRoomId);
+    setupRealtimeSubscriptionFn(stableRoomId);
 
     // クリーンアップ
     return () => {
@@ -337,12 +345,12 @@ export function useRoomRealtime(roomId: string | null): UseRoomRealtimeResult {
       setIsRealtimeDisconnected(false);
       setIsReconnected(false);
     };
-  }, [roomId]);
+  }, [stableRoomId]);
 
   // アプリ復帰時にデータを再取得
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (nextAppState) => {
-      if (nextAppState === "active" && stableRoomIdRef.current) {
+      if (nextAppState === "active" && roomIdRef.current) {
         refetchRef.current();
       }
     });
