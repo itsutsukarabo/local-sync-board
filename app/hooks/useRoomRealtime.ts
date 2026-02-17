@@ -9,6 +9,11 @@ import { supabase } from "../lib/supabase";
 import { Room } from "../types";
 import { migrateTemplate } from "../utils/roomUtils";
 
+// ── 診断ログ ──
+// スピナー固着問題の原因特定用。原因確定後に削除すること。
+const D_TAG = "[RoomRT]";
+const dlog = (msg: string, ...args: unknown[]) => console.log(`${D_TAG} ${msg}`, ...args);
+
 interface UseRoomRealtimeResult {
   room: Room | null;
   loading: boolean;
@@ -34,7 +39,14 @@ export function useRoomRealtime(roomId: string | null): UseRoomRealtimeResult {
   const [stableRoomId, setStableRoomId] = useState(roomId);
   useEffect(() => {
     if (roomId) {
-      setStableRoomId(roomId);
+      setStableRoomId((prev) => {
+        if (prev !== roomId) {
+          dlog("stableRoomId 更新:", prev, "→", roomId);
+        }
+        return roomId;
+      });
+    } else {
+      dlog("roomId が falsy を受信（無視）:", roomId, "stableRoomId 維持");
     }
   }, [roomId]);
   // コールバック内から参照するための ref
@@ -49,9 +61,28 @@ export function useRoomRealtime(roomId: string | null): UseRoomRealtimeResult {
   const reconnectedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // 切断を経験したかどうか（初回接続では再接続バナーを出さない）
   const hasBeenDisconnectedRef = useRef(false);
-  // デバッグ用ログ（通常は無効化。調査時に console.log に切り替え）
-  const mountTimeRef = useRef(Date.now());
-  const dbg = (_msg: string, ..._args: unknown[]) => {};
+
+  // ── state 変化の追跡ラッパー ──
+  const renderCountRef = useRef(0);
+  renderCountRef.current += 1;
+  const rc = renderCountRef.current;
+  // 初回のみ全 state をダンプ
+  if (rc === 1) {
+    dlog(`render #${rc} (mount): roomId=${roomId}, stableRoomId=${stableRoomId}, loading=${loading}, room=${room ? "exists" : "null"}`);
+  }
+
+  const setLoadingD = useCallback((val: boolean, reason: string) => {
+    dlog(`setLoading: ${val} (${reason})`);
+    setLoading(val);
+  }, []);
+  const setRoomD = useCallback((val: Room | null, reason: string) => {
+    dlog(`setRoom: ${val ? "Room(" + val.id?.substring(0, 8) + ")" : "null"} (${reason})`);
+    setRoom(val);
+  }, []);
+  const setErrorD = useCallback((val: Error | null, reason: string) => {
+    dlog(`setError: ${val ? val.message : "null"} (${reason})`);
+    setError(val);
+  }, []);
 
   // 操作元の二重 refetch 防止用クールダウン
   const lastManualRefetchTime = useRef<number>(0);
@@ -96,7 +127,10 @@ export function useRoomRealtime(roomId: string | null): UseRoomRealtimeResult {
   // 手動でデータを再取得する関数（デバウンス300ms + タイムアウト10秒）
   const refetch = useCallback(async () => {
     const id = roomIdRef.current;
-    if (!id) return;
+    if (!id) {
+      dlog("refetch: スキップ（roomIdRef.current が falsy）");
+      return;
+    }
 
     // 前回のデバウンスタイマーをクリア
     if (debounceTimerRef.current) {
@@ -131,23 +165,25 @@ export function useRoomRealtime(roomId: string | null): UseRoomRealtimeResult {
           if (data) {
             const roomData = data as Room;
             roomData.template = migrateTemplate(roomData.template);
-            setRoom(roomData);
+            setRoomD(roomData, "refetch 成功");
             // 成功したらエラーと失敗カウントをリセット
             consecutiveFailuresRef.current = 0;
             lastManualRefetchTime.current = Date.now();
-            if (error) setError(null);
+            if (error) setErrorD(null, "refetch 成功によりリセット");
             // REST で取得できているなら接続警告バナーも解除
             markReconnected();
           }
         } catch (err) {
           console.error("Error refetching room:", err);
           consecutiveFailuresRef.current += 1;
+          dlog(`refetch 失敗 (${consecutiveFailuresRef.current}/${REFETCH_FAILURE_THRESHOLD}):`, err);
           // 連続失敗が閾値を超えたらエラーをUIに反映（ただしroomはnullにしない）
           if (consecutiveFailuresRef.current >= REFETCH_FAILURE_THRESHOLD) {
-            setError(
+            setErrorD(
               err instanceof Error
                 ? err
-                : new Error("サーバーとの通信に失敗しています")
+                : new Error("サーバーとの通信に失敗しています"),
+              "refetch 連続失敗"
             );
           }
         } finally {
@@ -169,6 +205,7 @@ export function useRoomRealtime(roomId: string | null): UseRoomRealtimeResult {
   const rebuildChannel = useCallback(() => {
     const id = roomIdRef.current;
     if (!id) return;
+    dlog("rebuildChannel: チャンネル再構築開始");
 
     // 既存チャンネルを破棄
     if (channelRef.current) {
@@ -188,7 +225,7 @@ export function useRoomRealtime(roomId: string | null): UseRoomRealtimeResult {
 
   const setupRealtimeSubscriptionFn = useCallback((targetRoomId: string) => {
     const channelId = `room-${targetRoomId}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    dbg("setupRealtimeSubscription, channelId =", channelId);
+    dlog("setupRealtimeSubscription:", channelId);
 
     const ch = supabase
       .channel(channelId)
@@ -212,10 +249,10 @@ export function useRoomRealtime(roomId: string | null): UseRoomRealtimeResult {
           if (newRoom && newRoom.id && newRoom.current_state && newRoom.template) {
             const roomData = newRoom as Room;
             roomData.template = migrateTemplate(roomData.template);
-            setRoom(roomData);
+            setRoomD(roomData, "Realtime ペイロード直接適用");
             markReconnected();
           } else {
-            // 不完全な場合はフォールバックで refetch
+            dlog("Realtime ペイロード不完全 → refetch フォールバック, keys:", newRoom ? Object.keys(newRoom) : "null");
             refetchRef.current();
           }
         }
@@ -229,12 +266,12 @@ export function useRoomRealtime(roomId: string | null): UseRoomRealtimeResult {
           filter: `id=eq.${targetRoomId}`,
         },
         () => {
-          setRoom(null);
-          setError(new Error("ルームが削除されました"));
+          setRoomD(null, "Realtime DELETE イベント");
+          setErrorD(new Error("ルームが削除されました"), "Realtime DELETE イベント");
         }
       )
       .subscribe((status, err) => {
-        dbg("channel status:", status, err);
+        dlog("channel status:", status, err ?? "");
         if (status === "SUBSCRIBED") {
           markReconnected();
           resubscribeAttemptsRef.current = 0;
@@ -275,7 +312,7 @@ export function useRoomRealtime(roomId: string | null): UseRoomRealtimeResult {
             }
           }, 5_000);
         } else if (status === "CLOSED") {
-          dbg("channel closed");
+          dlog("channel closed");
           markDisconnected();
         }
       });
@@ -284,26 +321,39 @@ export function useRoomRealtime(roomId: string | null): UseRoomRealtimeResult {
   }, [markReconnected, markDisconnected]);
 
   useEffect(() => {
-    dbg("useEffect fired, stableRoomId =", stableRoomId);
+    dlog(`mainEffect 実行: stableRoomId=${stableRoomId}`);
     if (!stableRoomId) {
-      // roomId がまだ一度も有効値を持っていない場合は loading 維持
+      dlog("mainEffect: stableRoomId が falsy → early return（loading 維持）");
       return;
     }
 
     // 初期データの取得
+    let aborted = false;
     const fetchInitialData = async () => {
-      dbg("fetchInitialData START");
+      dlog("fetchInitialData: 開始");
       try {
-        setLoading(true);
-        setError(null);
+        setLoadingD(true, "fetchInitialData 開始");
+        setErrorD(null, "fetchInitialData 開始");
 
-        dbg("supabase query START");
+        const controller = new AbortController();
+        const timeout = setTimeout(() => {
+          dlog("fetchInitialData: 10秒タイムアウト発火");
+          controller.abort();
+        }, 10_000);
+
         const { data, error: fetchError } = await supabase
           .from("rooms")
           .select("*")
           .eq("id", stableRoomId)
+          .abortSignal(controller.signal)
           .single();
-        dbg("supabase query END, hasData:", !!data, "hasError:", !!fetchError);
+
+        clearTimeout(timeout);
+
+        if (aborted) {
+          dlog("fetchInitialData: useEffect cleanup 済み → 結果を破棄");
+          return;
+        }
 
         if (fetchError) {
           throw fetchError;
@@ -315,17 +365,21 @@ export function useRoomRealtime(roomId: string | null): UseRoomRealtimeResult {
 
         const roomData = data as Room;
         roomData.template = migrateTemplate(roomData.template);
-        dbg("setRoom (data received)");
-        setRoom(roomData);
+        setRoomD(roomData, "fetchInitialData 成功");
       } catch (err) {
-        dbg("fetchInitialData CATCH:", err);
+        if (aborted) {
+          dlog("fetchInitialData: catch だが useEffect cleanup 済み → 無視");
+          return;
+        }
         console.error("Error fetching room:", err);
-        setError(
-          err instanceof Error ? err : new Error("ルームの取得に失敗しました")
+        setErrorD(
+          err instanceof Error ? err : new Error("ルームの取得に失敗しました"),
+          "fetchInitialData 失敗"
         );
       } finally {
-        dbg("fetchInitialData FINALLY → setLoading(false)");
-        setLoading(false);
+        if (!aborted) {
+          setLoadingD(false, "fetchInitialData 完了");
+        }
       }
     };
 
@@ -335,7 +389,8 @@ export function useRoomRealtime(roomId: string | null): UseRoomRealtimeResult {
 
     // クリーンアップ
     return () => {
-      dbg("cleanup: removing channel");
+      dlog("mainEffect cleanup: stableRoomId =", stableRoomId);
+      aborted = true;
       if (resubscribeTimerRef.current) clearTimeout(resubscribeTimerRef.current);
       if (reconnectedTimerRef.current) clearTimeout(reconnectedTimerRef.current);
       if (channelRef.current) {
@@ -350,6 +405,7 @@ export function useRoomRealtime(roomId: string | null): UseRoomRealtimeResult {
   // アプリ復帰時にデータを再取得
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (nextAppState) => {
+      dlog("AppState 変化:", nextAppState, "roomIdRef =", roomIdRef.current);
       if (nextAppState === "active" && roomIdRef.current) {
         refetchRef.current();
       }
