@@ -96,6 +96,87 @@ export async function getRoomHistory(
   return data;
 }
 
+/** room_settlements を取得（新しい順） */
+export async function getSettlements(
+  supabase: SupabaseClient,
+  roomId: string
+): Promise<
+  Array<{
+    id: string;
+    type: string;
+    player_results: unknown;
+    created_at: string;
+  }>
+> {
+  const { data, error } = await supabase
+    .from("room_settlements")
+    .select("id, type, player_results, created_at")
+    .eq("room_id", roomId)
+    .order("created_at", { ascending: false });
+  if (error) throw new Error(`getSettlements failed: ${error.message}`);
+  return data;
+}
+
+/** テスト用ルームを seats 付きで作成し room id を返す */
+export async function createTestRoomWithSeats(
+  supabase: SupabaseClient,
+  hostUserId: string,
+  opts: {
+    currentState: Record<string, unknown>;
+    seats: unknown[];
+    template?: Record<string, unknown>;
+  }
+): Promise<string> {
+  const { data, error } = await supabase
+    .from("rooms")
+    .insert({
+      host_user_id: hostUserId,
+      room_code: generateRoomCode(),
+      status: "playing",
+      template: opts.template ?? DEFAULT_TEMPLATE,
+      current_state: opts.currentState,
+      seats: opts.seats,
+    })
+    .select("id")
+    .single();
+  if (error)
+    throw new Error(`createTestRoomWithSeats failed: ${error.message}`);
+  return data.id;
+}
+
+// ---- 認証済みクライアント（RLS テスト用） ----
+
+const ANON_KEY =
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0";
+
+export interface AnonUser {
+  /** anon key + 匿名ログイン済みクライアント（RLS が適用される） */
+  client: SupabaseClient;
+  userId: string;
+}
+
+/**
+ * 匿名ユーザーとしてログインした Supabase クライアントを生成する。
+ * アプリの `signInAnonymously()` と同等の認証フロー。
+ * handle_new_user トリガーにより profiles レコードも自動作成される。
+ */
+export async function createAnonUser(): Promise<AnonUser> {
+  const client = createClient(SUPABASE_URL, ANON_KEY, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+  const { data, error } = await client.auth.signInAnonymously();
+  if (error) throw new Error(`signInAnonymously failed: ${error.message}`);
+  return { client, userId: data.user!.id };
+}
+
+/** 匿名ユーザーをクリーンアップ（service_role で削除） */
+export async function cleanupAnonUser(
+  admin: SupabaseClient,
+  userId: string
+): Promise<void> {
+  await admin.auth.admin.deleteUser(userId);
+}
+
 // ---- 内部ユーティリティ ----
 
 function generateRoomCode(): string {
