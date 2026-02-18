@@ -69,6 +69,8 @@ export function useRoomRealtime(roomId: string | null): UseRoomRealtimeResult {
   const MAX_RESUBSCRIBE_ATTEMPTS = 3;
   // チャンネル参照（useEffect 外からチャンネル再構築するため）
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  // 初回接続かどうか（fetchInitialData と SUBSCRIBED refetch の競合防止）
+  const isInitialSubscribeRef = useRef(true);
 
   // 切断→復帰時にバナーを5秒間表示するヘルパー
   const markReconnected = useCallback(() => {
@@ -235,8 +237,13 @@ export function useRoomRealtime(roomId: string | null): UseRoomRealtimeResult {
         if (status === "SUBSCRIBED") {
           markReconnected();
           resubscribeAttemptsRef.current = 0;
-          // 再接続後はデータを最新化
-          refetchRef.current();
+          // 初回接続では fetchInitialData が既にデータを取得済みなので refetch 不要。
+          // 再接続時のみ refetch して最新データに同期する。
+          if (isInitialSubscribeRef.current) {
+            isInitialSubscribeRef.current = false;
+          } else {
+            refetchRef.current();
+          }
         } else if (status === "CHANNEL_ERROR") {
           console.error(
             "Realtime channel error:",

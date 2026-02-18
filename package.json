@@ -7,6 +7,9 @@
   },
   "devDependencies": {
     "@supabase/supabase-js": "^2.96.0",
+    "@testing-library/react": "^16.3.2",
+    "jsdom": "^28.1.0",
+    "react-dom": "^19.2.4",
     "vitest": "^4.0.18"
   }
 }

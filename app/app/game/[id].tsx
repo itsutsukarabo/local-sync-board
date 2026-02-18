@@ -3,7 +3,7 @@
  * ルームのリアルタイム同期とプレイヤー一覧表示
  */
 
-import React, { useEffect, useCallback, useState } from "react";
+import React, { useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -13,41 +13,21 @@ import {
   Alert,
   ActivityIndicator,
   BackHandler,
-  Platform,
 } from "react-native";
-import * as Haptics from "expo-haptics";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useRoomRealtime } from "../../hooks/useRoomRealtime";
 import { useConnectionMonitor } from "../../hooks/useConnectionMonitor";
 import { useAuth } from "../../hooks/useAuth";
+import { useGameActions } from "../../hooks/useGameActions";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import PlayerList from "../../components/game/PlayerList";
 import MahjongTable from "../../components/game/MahjongTable";
 import HistoryLog from "../../components/game/HistoryLog";
 import Toast from "../../components/common/Toast";
 import { useToast } from "../../hooks/useToast";
-import {
-  joinRoom,
-  joinGame,
-  leaveRoom,
-  transferScore,
-  joinSeat,
-  joinFakeSeat,
-  reseatFakePlayer,
-  forceLeaveSeat,
-  leaveSeat,
-  rollbackTo,
-  undoLast,
-  saveSettlement,
-} from "../../lib/roomApi";
+import { leaveSeat } from "../../lib/roomApi";
 import { RecentLogEntry } from "../../types";
-import { fetchSettlements } from "../../lib/roomApi";
-import { supabase } from "../../lib/supabase";
-import {
-  canExecuteSettlement,
-  executeSettlement,
-} from "../../utils/settlementUtils";
 
 export default function GameScreen() {
   const router = useRouter();
@@ -61,9 +41,24 @@ export default function GameScreen() {
     room?.template?.forceLeaveTimeoutSec,
   );
 
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [settlementCount, setSettlementCount] = useState(0);
+  const isHost = user?.id === room?.host_user_id;
   const { toasts, show: showToast, dismiss: dismissToast } = useToast();
+
+  const {
+    isProcessing,
+    settlementCount,
+    handleJoinSeat,
+    handleJoinFakeSeat,
+    handleLeaveSeat,
+    handleForceLeave,
+    handleTransfer,
+    handleRollback,
+    handleUndo,
+    handleSettlement,
+    handleJoinGame,
+    handleLeaveGame,
+    handleSettlementComplete,
+  } = useGameActions({ room, user, isHost, showToast });
 
   // エラーハンドリング: 永続的エラーと一時的エラーを分類
   useEffect(() => {
@@ -93,25 +88,9 @@ export default function GameScreen() {
     }
   }, [error]);
 
-  // ユーザーが座席に座っているかチェック（フック依存のため早期リターン前に計算）
+  // ユーザーが座席に座っているかチェック
   const isUserSeated =
     room?.seats?.some((seat) => seat && seat.userId === user?.id) || false;
-
-  // 精算件数を取得（room更新時に再取得し、非ホストにもボタンを表示）
-  const latestLogId = room?.current_state?.__recent_log__?.slice(-1)?.[0]?.id;
-  useEffect(() => {
-    if (!room?.id) return;
-    fetchSettlements(room.id).then(({ settlements }) => {
-      setSettlementCount(settlements.length);
-    });
-  }, [room?.id, latestLogId]);
-
-  // 精算完了時にカウントを更新
-  const handleSettlementComplete = useCallback(async () => {
-    if (!room?.id) return;
-    const { settlements } = await fetchSettlements(room.id);
-    setSettlementCount(settlements.length);
-  }, [room?.id]);
 
   // 戻るボタンハンドラー（着席中なら離席確認ダイアログ表示）
   const handleBack = useCallback(() => {
@@ -178,7 +157,6 @@ export default function GameScreen() {
     );
   }
 
-  const isHost = user?.id === room.host_user_id;
   // 予約キー（__pot__, __recent_log__）を除外してプレイヤーリストを取得
   const players = Object.keys(room.current_state || {}).filter(
     (id) => !id.startsWith("__")
@@ -189,320 +167,6 @@ export default function GameScreen() {
   // レイアウトモードを取得
   const layoutMode = room.template.layoutMode || "list";
   const isPotEnabled = room.template.potEnabled || false;
-
-  // ゲーム参加ハンドラー（リストモード用）
-  const handleJoinGame = async () => {
-    if (!room || !user) return;
-
-    try {
-      // joinGame関数を使用してゲームに参加（current_stateにプレイヤーを追加）
-      const { error } = await joinGame(room.id);
-
-      if (error) {
-        Alert.alert("エラー", error.message);
-        return;
-      }
-
-    } catch (error) {
-      console.error("Error joining game:", error);
-      Alert.alert("エラー", "ゲームへの参加に失敗しました");
-    }
-  };
-
-  // ゲーム退出ハンドラー
-  const handleLeaveGame = async () => {
-    if (!room || !user) return;
-
-    Alert.alert("確認", "ゲームから退出しますか？\n（ルームには残ります）", [
-      { text: "キャンセル", style: "cancel" },
-      {
-        text: "退出",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            // current_stateから自分を削除
-            const currentState = { ...room.current_state };
-            delete currentState[user.id];
-
-            const { error } = await supabase
-              .from("rooms")
-              .update({ current_state: currentState })
-              .eq("id", room.id);
-
-            if (error) {
-              throw error;
-            }
-
-          } catch (error) {
-            console.error("Error leaving game:", error);
-            Alert.alert("エラー", "ゲームからの退出に失敗しました");
-          }
-        },
-      },
-    ]);
-  };
-
-  // スコア移動ハンドラー
-  const handleTransfer = async (
-    fromId: string,
-    toId: string,
-    transfers: { variable: string; amount: number }[]
-  ) => {
-    if (!room || isProcessing) return;
-    setIsProcessing(true);
-
-    // 履歴ログ用に表示名を取得
-    const getDisplayName = (id: string): string | undefined => {
-      if (id === "__pot__") return undefined; // 供託は名前不要（roomApi側で処理）
-      const seat = room.seats?.find((s) => s?.userId === id);
-      return seat?.displayName;
-    };
-    const fromName = getDisplayName(fromId);
-    const toName = getDisplayName(toId);
-
-    try {
-      const { error } = await transferScore(room.id, fromId, toId, transfers, fromName, toName);
-
-      if (error) {
-        showToast("error", error.message);
-        return;
-      }
-
-      showToast("success", "支払いが完了しました");
-    } catch (error) {
-      console.error("Error transferring score:", error);
-      showToast("error", "スコアの移動に失敗しました");
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  // 座席に着席するハンドラー
-  const handleJoinSeat = async (seatIndex: number) => {
-    if (!room || !user) return;
-
-    // 着席ボタンタップ時のHapticsフィードバック
-    if (Platform.OS !== "web") {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    }
-
-    try {
-      const { error } = await joinSeat(room.id, seatIndex);
-
-      if (error) {
-        Alert.alert("エラー", error.message);
-        return;
-      }
-
-    } catch (error) {
-      console.error("Error joining seat:", error);
-      Alert.alert("エラー", "座席への着席に失敗しました");
-    }
-  };
-
-  // ゲストを座席に着席させるハンドラー（ホスト長押し）
-  const handleJoinFakeSeat = async (seatIndex: number) => {
-    if (!room || !user) return;
-
-    // 離席済みゲスト（current_stateにいるがseatsにいないfake_*）を検索
-    const seatedFakeIds = new Set(
-      (room.seats || [])
-        .filter((s: any) => s && s.isFake && s.userId)
-        .map((s: any) => s.userId)
-    );
-    const unseatedFakes = Object.keys(room.current_state || {})
-      .filter((id) => id.startsWith("fake_") && !seatedFakeIds.has(id));
-
-    if (unseatedFakes.length === 0) {
-      // 離席済みゲストがいない場合は直接新規作成
-      try {
-        const { error } = await joinFakeSeat(room.id, seatIndex);
-        if (error) {
-          Alert.alert("エラー", error.message);
-          return;
-        }
-      } catch (error) {
-        console.error("Error joining fake seat:", error);
-        Alert.alert("エラー", "ゲストの作成に失敗しました");
-      }
-      return;
-    }
-
-    // 離席済みゲストがいる場合は選択UIを表示
-    const buttons: any[] = unseatedFakes.map((fakeId) => {
-      const playerState = room.current_state[fakeId];
-      const score = playerState?.score ?? 0;
-      const guestName = playerState?.__displayName__ || fakeId;
-      return {
-        text: `${guestName} (点数: ${score.toLocaleString()})`,
-        onPress: async () => {
-          try {
-            const { error } = await reseatFakePlayer(room.id, fakeId, seatIndex);
-            if (error) {
-              Alert.alert("エラー", error.message);
-              return;
-            }
-          } catch (error) {
-            console.error("Error reseating fake player:", error);
-            Alert.alert("エラー", "ゲストの再着席に失敗しました");
-          }
-        },
-      };
-    });
-
-    buttons.push({
-      text: "新規作成",
-      onPress: async () => {
-        try {
-          const { error } = await joinFakeSeat(room.id, seatIndex);
-          if (error) {
-            Alert.alert("エラー", error.message);
-            return;
-          }
-        } catch (error) {
-          console.error("Error joining fake seat:", error);
-          Alert.alert("エラー", "ゲストの作成に失敗しました");
-        }
-      },
-    });
-
-    buttons.push({ text: "キャンセル", style: "cancel" });
-
-    Alert.alert("ゲストを選択", "既存のゲストを再着席させるか、新規作成しますか？", buttons);
-  };
-
-  // 実ユーザーを強制離席させるハンドラー（ホスト操作）
-  const handleForceLeave = async (targetUserId: string) => {
-    if (!room) return;
-
-    try {
-      const { error } = await forceLeaveSeat(room.id, targetUserId);
-
-      if (error) {
-        Alert.alert("エラー", error.message);
-        return;
-      }
-
-    } catch (error) {
-      console.error("Error force leaving seat:", error);
-      Alert.alert("エラー", "強制離席に失敗しました");
-    }
-  };
-
-  // 座席から離席するハンドラー
-  const handleLeaveSeat = async () => {
-    if (!room || !user) return;
-
-    Alert.alert("確認", "座席から離席しますか？", [
-      { text: "キャンセル", style: "cancel" },
-      {
-        text: "離席",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            const { error } = await leaveSeat(room.id);
-
-            if (error) {
-              Alert.alert("エラー", error.message);
-              return;
-            }
-
-          } catch (error) {
-            console.error("Error leaving seat:", error);
-            Alert.alert("エラー", "座席からの離席に失敗しました");
-          }
-        },
-      },
-    ]);
-  };
-
-  // ロールバックハンドラー
-  const handleRollback = async (historyId: string) => {
-    if (!room) return;
-
-    try {
-      const { error } = await rollbackTo(room.id, historyId);
-
-      if (error) {
-        showToast("error", error.message);
-        return;
-      }
-
-    } catch (error) {
-      console.error("Error rolling back:", error);
-      showToast("error", "ロールバックに失敗しました");
-    }
-  };
-
-  // Undoハンドラー
-  const handleUndo = async () => {
-    if (!room) return;
-
-    try {
-      const { error } = await undoLast(room.id);
-
-      if (error) {
-        showToast("error", error.message);
-        return;
-      }
-
-    } catch (error) {
-      console.error("Error undoing:", error);
-      showToast("error", "取り消しに失敗しました");
-    }
-  };
-
-  // 精算ハンドラー
-  const handleSettlement = () => {
-    if (!room) return;
-
-    const { canExecute, reason } = canExecuteSettlement(
-      room.current_state,
-      room.seats || [null, null, null, null],
-      room.template.variables
-    );
-
-    if (!canExecute) {
-      Alert.alert("精算不可", reason || "精算を実行できません");
-      return;
-    }
-
-    Alert.alert("確認", "半荘の精算を実行しますか？\nスコアは初期値にリセットされます。", [
-      { text: "キャンセル", style: "cancel" },
-      {
-        text: "精算実行",
-        onPress: async () => {
-          try {
-            const config = room.template.settlementConfig;
-            if (!config) {
-              Alert.alert("エラー", "精算設定がありません");
-              return;
-            }
-
-            const settlement = executeSettlement(
-              room.current_state,
-              room.seats || [null, null, null, null],
-              config,
-              room.template.variables
-            );
-
-            const { error } = await saveSettlement(room.id, settlement);
-
-            if (error) {
-              showToast("error", error.message);
-              return;
-            }
-
-            showToast("success", "精算が完了しました");
-            await handleSettlementComplete();
-          } catch (error) {
-            console.error("Error executing settlement:", error);
-            showToast("error", "精算の実行に失敗しました");
-          }
-        },
-      },
-    ]);
-  };
 
   // 直近の操作ログを取得（プレビュー用）
   const recentLog: RecentLogEntry[] = room?.current_state?.__recent_log__ || [];
