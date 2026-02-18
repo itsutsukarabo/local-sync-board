@@ -6,6 +6,18 @@ export default defineConfig({
     include: ["tests/**/*.test.ts"],
     testTimeout: 10_000,
   },
+  // app/tsconfig.json が "extends": "expo/tsconfig.base" を持つが、
+  // CI の root node_modules には expo が無い。
+  // tsconfigRaw でインライン設定を渡し、tsconfig ファイル解決をバイパスする。
+  esbuild: {
+    tsconfigRaw: {
+      compilerOptions: {
+        jsx: "react-jsx",
+        esModuleInterop: true,
+        allowSyntheticDefaultImports: true,
+      },
+    },
+  },
   resolve: {
     alias: {
       // app/node_modules/react (19.1.0) と node_modules/react (19.2.4) の重複を解消。
