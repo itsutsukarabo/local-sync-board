@@ -177,7 +177,7 @@ export function useDragInteraction(options: {
       }
 
       // Pot
-      if (isPotEnabled) {
+      if (isPotEnabled && excludeId !== "__pot__") {
         const potRel = toRelative(
           potPositionRef.current.x,
           potPositionRef.current.y

@@ -82,6 +82,7 @@ export default function MahjongTable({
   // --- ドロップ処理 ---
   const handleDrop = useCallback(
     (fromId: string, toId: string) => {
+      if (fromId === toId) return;
       if (toId === "__pot__") {
         if (potActions.length === 0) {
           return;
