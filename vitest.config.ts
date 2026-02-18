@@ -8,15 +8,16 @@ export default defineConfig({
   },
   // app/tsconfig.json が "extends": "expo/tsconfig.base" を持つが、
   // CI の root node_modules には expo が無い。
-  // tsconfigRaw でインライン設定を渡し、tsconfig ファイル解決をバイパスする。
+  // tsconfigRaw を JSON **文字列** で渡すと TSConfck のファイル解決を完全にバイパスできる。
+  // （オブジェクト形式だと Vite はファイルも読みに行きマージするため回避にならない）
   esbuild: {
-    tsconfigRaw: {
+    tsconfigRaw: JSON.stringify({
       compilerOptions: {
         jsx: "react-jsx",
         esModuleInterop: true,
         allowSyntheticDefaultImports: true,
       },
-    },
+    }),
   },
   resolve: {
     alias: {
