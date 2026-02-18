@@ -29,6 +29,15 @@ export default defineConfig({
       // 既存の Supabase 統合テストは react-native を import しないため影響なし。
       "react-native": path.resolve(__dirname, "tests/__mocks__/react-native.ts"),
       "expo-haptics": path.resolve(__dirname, "tests/__mocks__/expo-haptics.ts"),
+      // CI の root node_modules に存在しない React Native 関連パッケージのスタブ
+      "react-native-url-polyfill/auto": path.resolve(
+        __dirname,
+        "tests/__mocks__/react-native-url-polyfill-auto.ts",
+      ),
+      "@react-native-async-storage/async-storage": path.resolve(
+        __dirname,
+        "tests/__mocks__/async-storage.ts",
+      ),
     },
   },
 });
