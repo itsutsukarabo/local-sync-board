@@ -21,6 +21,17 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   const segments = useSegments();
   const router = useRouter();
   const [retrying, setRetrying] = useState(false);
+  // 初回の認証＋プロファイル取得が完了したかを追跡。
+  // true になった後は children（Stack ナビゲーター）を常にマウントし続け、
+  // トークンリフレッシュ等による一時的な loading 変化でナビゲーション状態が
+  // 破壊されるのを防ぐ。
+  const [initialAuthDone, setInitialAuthDone] = useState(false);
+
+  useEffect(() => {
+    if (!loading && !profileLoading && !initialAuthDone) {
+      setInitialAuthDone(true);
+    }
+  }, [loading, profileLoading, initialAuthDone]);
 
   useEffect(() => {
     // loading中はリダイレクトしない
@@ -49,50 +60,55 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
     }
   }, [user, profile, loading, profileLoading, segments]);
 
-  // ローディング中の表示（プロファイル取得中も含む）
-  if (loading || profileLoading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#2563eb" />
-      </View>
-    );
+  // 初回ロード完了前はこれまで通りローディング表示（children はまだマウントしない）
+  if (!initialAuthDone) {
+    if (loading || profileLoading) {
+      return (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#2563eb" />
+        </View>
+      );
+    }
+
+    // 初回で認証失敗の場合のリトライ画面
+    if (!user) {
+      const handleRetry = async () => {
+        setRetrying(true);
+        try {
+          await signInAnonymously();
+        } catch (e) {
+          console.error("リトライ失敗:", e);
+        } finally {
+          setRetrying(false);
+        }
+      };
+
+      return (
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorTitle}>接続できませんでした</Text>
+          <Text style={styles.errorMessage}>
+            ネットワーク接続を確認して{"\n"}もう一度お試しください
+          </Text>
+          <TouchableOpacity
+            style={styles.retryButton}
+            onPress={handleRetry}
+            disabled={retrying}
+            activeOpacity={0.8}
+          >
+            {retrying ? (
+              <ActivityIndicator color="#ffffff" />
+            ) : (
+              <Text style={styles.retryButtonText}>再試行</Text>
+            )}
+          </TouchableOpacity>
+        </View>
+      );
+    }
   }
 
-  // 認証失敗時のリトライ画面
-  if (!loading && !user) {
-    const handleRetry = async () => {
-      setRetrying(true);
-      try {
-        await signInAnonymously();
-      } catch (e) {
-        console.error("リトライ失敗:", e);
-      } finally {
-        setRetrying(false);
-      }
-    };
-
-    return (
-      <View style={styles.errorContainer}>
-        <Text style={styles.errorTitle}>接続できませんでした</Text>
-        <Text style={styles.errorMessage}>
-          ネットワーク接続を確認して{"\n"}もう一度お試しください
-        </Text>
-        <TouchableOpacity
-          style={styles.retryButton}
-          onPress={handleRetry}
-          disabled={retrying}
-          activeOpacity={0.8}
-        >
-          {retrying ? (
-            <ActivityIndicator color="#ffffff" />
-          ) : (
-            <Text style={styles.retryButtonText}>再試行</Text>
-          )}
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
+  // 初回ロード完了後は children（Stack）を常にマウントし続ける。
+  // トークンリフレッシュ等で loading が一瞬 true になっても
+  // ナビゲーション状態は維持される。
   return <>{children}</>;
 }
 
