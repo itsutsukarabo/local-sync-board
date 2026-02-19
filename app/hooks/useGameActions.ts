@@ -239,6 +239,7 @@ export function useGameActions({
       transfers: { variable: string; amount: number }[]
     ) => {
       if (!room || isProcessing) return;
+      if (fromId === toId) return;
       setIsProcessing(true);
 
       const getDisplayName = (id: string): string | undefined => {

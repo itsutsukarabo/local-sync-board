@@ -226,6 +226,20 @@ describe("useGameActions", () => {
       expect(mockShowToast).toHaveBeenCalledWith("error", "転送エラー");
     });
 
+    it("fromId と toId が同じ場合は transferScore が呼ばれない", async () => {
+      const { result } = renderHook(() => useGameActions(defaultParams()));
+
+      await act(async () => {
+        await result.current.handleTransfer(
+          "user-1",
+          "user-1", // 自己転送
+          [{ variable: "score", amount: 1000 }]
+        );
+      });
+
+      expect(mockTransferScore).not.toHaveBeenCalled();
+    });
+
     it("displayName を seats から取得して transferScore に渡す", async () => {
       mockTransferScore.mockResolvedValue({ error: null });
 
@@ -245,6 +259,43 @@ describe("useGameActions", () => {
         "user-2",
         [{ variable: "score", amount: 1000 }],
         "Player1",
+        "Player2"
+      );
+    });
+
+    it("席の userId が変わった後も現在の seats から displayName を正しく取得する", async () => {
+      mockTransferScore.mockResolvedValue({ error: null });
+
+      // 席 0 に user-new が着席している room（以前は user-old がいた想定）
+      const roomWithNewPlayer = makeRoom({
+        seats: [
+          { userId: "user-new", status: "active", displayName: "新プレイヤー" },
+          { userId: "user-2", status: "active", displayName: "Player2" },
+          null,
+          null,
+        ],
+        current_state: {
+          "user-new": { score: 25000 },
+          "user-2": { score: 25000 },
+        },
+      });
+      const params = { ...defaultParams(), room: roomWithNewPlayer };
+      const { result } = renderHook(() => useGameActions(params));
+
+      await act(async () => {
+        await result.current.handleTransfer(
+          "user-new",
+          "user-2",
+          [{ variable: "score", amount: 1000 }]
+        );
+      });
+
+      expect(mockTransferScore).toHaveBeenCalledWith(
+        "room-1",
+        "user-new",
+        "user-2",
+        [{ variable: "score", amount: 1000 }],
+        "新プレイヤー", // 旧プレイヤー名ではなく現在の seats から取得
         "Player2"
       );
     });

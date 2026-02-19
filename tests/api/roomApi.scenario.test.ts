@@ -291,6 +291,9 @@ describe("roomApi シナリオテスト: 架空プレイヤー追加・移動・
     expect(dbAfterReseat!.seats[1]).not.toBeNull();
     expect(dbAfterReseat!.seats[1].userId).toBe(fakeId);
     expect(dbAfterReseat!.seats[1].isFake).toBe(true);
+    // reseat 後も displayName が元のゲスト名（IDではない）であること
+    expect(dbAfterReseat!.seats[1].displayName).toBe(seat0.displayName);
+    expect(dbAfterReseat!.seats[1].displayName).not.toMatch(/^fake_/);
 
     // current_state は維持されている
     expect(dbAfterReseat!.current_state[fakeId]).toBeDefined();
@@ -307,5 +310,47 @@ describe("roomApi シナリオテスト: 架空プレイヤー追加・移動・
     expect(dbAfterRemove!.seats[1]).toBeNull();
     // current_state からも削除されている
     expect(dbAfterRemove!.current_state[fakeId]).toBeUndefined();
+  });
+
+  it("離席中ゲストがいる状態で新規ゲストを追加すると displayName が衝突しない", async () => {
+    // ======== 1. ホストがルームを作成 ========
+    setClient(host.client);
+    const { room, error: createError } = await createRoom(TEST_TEMPLATE);
+
+    expect(createError).toBeNull();
+    const roomId = room.id;
+    roomIdForCleanup = roomId;
+
+    // ======== 2. ゲストAを席 0 に追加（displayName = "プレイヤーA"） ========
+    setClient(host.client);
+    const { error: fakeError1 } = await joinFakeSeat(roomId, 0);
+    expect(fakeError1).toBeNull();
+
+    const dbAfterFirst = await getRoom(roomId);
+    const firstFakeSeat = dbAfterFirst!.seats[0];
+    expect(firstFakeSeat).not.toBeNull();
+    expect(firstFakeSeat.displayName).toBe("プレイヤーA");
+
+    // ======== 3. 席 0 を手動で空ける（ゲストAは current_state に残存） ========
+    // ※ current_state の __displayName__ は "プレイヤーA" のまま保持される
+    const seatsWithEmpty = [...dbAfterFirst!.seats];
+    seatsWithEmpty[0] = null;
+    await admin
+      .from("rooms")
+      .update({ seats: seatsWithEmpty })
+      .eq("id", roomId);
+
+    // ======== 4. 新規ゲストを席 0 に追加 ========
+    setClient(host.client);
+    const { error: fakeError2 } = await joinFakeSeat(roomId, 0);
+    expect(fakeError2).toBeNull();
+
+    const dbAfterSecond = await getRoom(roomId);
+    const newSeat = dbAfterSecond!.seats[0];
+    expect(newSeat).not.toBeNull();
+
+    // 離席中の "プレイヤーA" と衝突せず、"プレイヤーB" が割り当てられる
+    expect(newSeat.displayName).toBe("プレイヤーB");
+    expect(newSeat.displayName).not.toBe("プレイヤーA");
   });
 });
