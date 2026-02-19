@@ -21,7 +21,32 @@ jobs:
         with:
           version: latest
 
-      - run: supabase start
+      # Docker イメージをキャッシュして 2回目以降の supabase start を高速化
+      - name: Cache Supabase Docker images
+        id: docker-cache
+        uses: actions/cache@v4
+        with:
+          path: /tmp/supabase-docker-cache
+          key: supabase-docker-${{ runner.os }}-${{ hashFiles('supabase/config.toml') }}
+          restore-keys: |
+            supabase-docker-${{ runner.os }}-
+
+      - name: Load cached Docker images
+        if: steps.docker-cache.outputs.cache-hit == 'true'
+        run: docker load --input /tmp/supabase-docker-cache/images.tar
+
+      # テストに不要なサービスを除外して起動（studio, inbucket, edge-runtime, logflare, vector）
+      - name: Start Supabase
+        run: supabase start --exclude studio,inbucket,edge-runtime,logflare,vector
+
+      # キャッシュミス時のみ保存（supabase start 後に全イメージを tar 化）
+      - name: Save Docker images to cache
+        if: steps.docker-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p /tmp/supabase-docker-cache
+          docker save \
+            $(docker images --format '{{.Repository}}:{{.Tag}}' | grep -v '<none>') \
+            --output /tmp/supabase-docker-cache/images.tar
 
       - run: npm ci
 
