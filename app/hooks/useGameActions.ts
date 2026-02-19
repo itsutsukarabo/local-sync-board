@@ -33,6 +33,7 @@ export interface UseGameActionsParams {
   user: User | null;
   isHost: boolean;
   showToast: (type: "success" | "error", msg: string) => void;
+  applyRoom: (room: Room) => void;
 }
 
 export interface UseGameActionsResult {
@@ -64,6 +65,7 @@ export function useGameActions({
   user,
   isHost,
   showToast,
+  applyRoom,
 }: UseGameActionsParams): UseGameActionsResult {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isJoining, setIsJoining] = useState(false);
@@ -98,9 +100,11 @@ export function useGameActions({
       }
 
       try {
-        const { error } = await joinSeat(room.id, seatIndex);
+        const { room: updatedRoom, error } = await joinSeat(room.id, seatIndex);
         if (error) {
           Alert.alert("エラー", error.message);
+        } else if (updatedRoom) {
+          applyRoom(updatedRoom);
         }
       } catch (error) {
         console.error("Error joining seat:", error);
@@ -109,7 +113,7 @@ export function useGameActions({
         setIsJoining(false);
       }
     },
-    [room, user, isJoining]
+    [room, user, isJoining, applyRoom]
   );
 
   // ゲストを座席に着席させるハンドラー（per-seat スピナー + キュー直列化）
@@ -218,9 +222,11 @@ export function useGameActions({
         style: "destructive",
         onPress: async () => {
           try {
-            const { error } = await leaveSeat(room.id);
+            const { room: updatedRoom, error } = await leaveSeat(room.id);
             if (error) {
               Alert.alert("エラー", error.message);
+            } else if (updatedRoom) {
+              applyRoom(updatedRoom);
             }
           } catch (error) {
             console.error("Error leaving seat:", error);
@@ -229,7 +235,7 @@ export function useGameActions({
         },
       },
     ]);
-  }, [room, user]);
+  }, [room, user, applyRoom]);
 
   // スコア移動ハンドラー
   const handleTransfer = useCallback(

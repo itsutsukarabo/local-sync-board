@@ -33,7 +33,7 @@ export default function GameScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { user } = useAuth();
-  const { room, loading, error, refetch, isRealtimeDisconnected, isReconnected } = useRoomRealtime(id);
+  const { room, loading, error, refetch, applyRoom, isRealtimeDisconnected, isReconnected } = useRoomRealtime(id);
   const { connectionStatuses } = useConnectionMonitor(
     id ?? null,
     user?.id ?? null,
@@ -60,7 +60,7 @@ export default function GameScreen() {
     handleJoinGame,
     handleLeaveGame,
     handleSettlementComplete,
-  } = useGameActions({ room, user, isHost, showToast });
+  } = useGameActions({ room, user, isHost, showToast, applyRoom });
 
   // エラーハンドリング: 永続的エラーと一時的エラーを分類
   useEffect(() => {

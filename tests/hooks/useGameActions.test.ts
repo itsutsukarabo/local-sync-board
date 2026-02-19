@@ -99,6 +99,7 @@ function makeRoom(overrides?: Partial<Room>): Room {
 
 const mockUser = { id: "user-1" } as User;
 const mockShowToast = vi.fn();
+const mockApplyRoom = vi.fn();
 
 function defaultParams() {
   return {
@@ -106,6 +107,7 @@ function defaultParams() {
     user: mockUser,
     isHost: true,
     showToast: mockShowToast,
+    applyRoom: mockApplyRoom,
   };
 }
 
@@ -304,7 +306,7 @@ describe("useGameActions", () => {
   // ── 3. handleJoinSeat ──
   describe("handleJoinSeat", () => {
     it("joinSeat が成功する", async () => {
-      mockJoinSeat.mockResolvedValue({ error: null });
+      mockJoinSeat.mockResolvedValue({ room: makeRoom(), error: null });
 
       const { result } = renderHook(() => useGameActions(defaultParams()));
 
@@ -317,6 +319,7 @@ describe("useGameActions", () => {
 
     it("joinSeat がエラーを返した場合 Alert が表示される", async () => {
       mockJoinSeat.mockResolvedValue({
+        room: null,
         error: new Error("座席が埋まっています"),
       });
 
@@ -327,6 +330,43 @@ describe("useGameActions", () => {
       });
 
       expect(mockAlert).toHaveBeenCalledWith("エラー", "座席が埋まっています");
+    });
+
+    it("joinSeat 成功時に applyRoom が即座に呼ばれ UI に反映される（初回着席バグ再発防止）", async () => {
+      const updatedRoom = makeRoom({
+        seats: [
+          { userId: "user-3", status: "active", displayName: "NewPlayer" },
+          null, null, null,
+        ],
+      });
+      mockJoinSeat.mockResolvedValue({ room: updatedRoom, error: null });
+
+      const { result } = renderHook(() =>
+        useGameActions({
+          ...defaultParams(),
+          room: makeRoom({ seats: [null, null, null, null] }),
+          user: { id: "user-3" } as User,
+        })
+      );
+
+      await act(async () => {
+        await result.current.handleJoinSeat(0);
+      });
+
+      expect(mockApplyRoom).toHaveBeenCalledWith(updatedRoom);
+      expect(mockApplyRoom).toHaveBeenCalledTimes(1);
+    });
+
+    it("joinSeat がエラーを返した場合 applyRoom は呼ばれない", async () => {
+      mockJoinSeat.mockResolvedValue({ room: null, error: new Error("着席失敗") });
+
+      const { result } = renderHook(() => useGameActions(defaultParams()));
+
+      await act(async () => {
+        await result.current.handleJoinSeat(2);
+      });
+
+      expect(mockApplyRoom).not.toHaveBeenCalled();
     });
   });
 
@@ -467,7 +507,36 @@ describe("useGameActions", () => {
     });
   });
 
-  // ── 9. 着席操作の排他制御 ──
+  // ── 9. handleLeaveSeat ──
+  describe("handleLeaveSeat", () => {
+    it("leaveSeat 成功時に applyRoom が呼ばれる", async () => {
+      const updatedRoom = makeRoom({ seats: [null, null, null, null] });
+      mockLeaveSeat.mockResolvedValue({ room: updatedRoom, error: null });
+
+      const { result } = renderHook(() => useGameActions(defaultParams()));
+
+      act(() => { result.current.handleLeaveSeat(); });
+      const onPress = mockAlert.mock.calls[0][2][1].onPress; // "離席" ボタン
+      await act(async () => { await onPress(); });
+
+      expect(mockApplyRoom).toHaveBeenCalledWith(updatedRoom);
+      expect(mockApplyRoom).toHaveBeenCalledTimes(1);
+    });
+
+    it("leaveSeat がエラーを返した場合 applyRoom は呼ばれない", async () => {
+      mockLeaveSeat.mockResolvedValue({ room: null, error: new Error("離席失敗") });
+
+      const { result } = renderHook(() => useGameActions(defaultParams()));
+
+      act(() => { result.current.handleLeaveSeat(); });
+      const onPress = mockAlert.mock.calls[0][2][1].onPress;
+      await act(async () => { await onPress(); });
+
+      expect(mockApplyRoom).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── 10. 着席操作の排他制御（ロック） ──
   describe("着席操作の排他制御", () => {
 
     // 9-1: handleJoinSeat（通常着席）= グローバルロック
@@ -583,7 +652,7 @@ describe("useGameActions", () => {
     });
   });
 
-  // ── 10. room が null の場合のガード ──
+  // ── 11. room が null の場合のガード ──
   describe("null ガード", () => {
     it("room が null のとき handleTransfer は何もしない", async () => {
       const params = { ...defaultParams(), room: null };

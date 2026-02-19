@@ -17,6 +17,8 @@ interface UseRoomRealtimeResult {
   loading: boolean;
   error: Error | null;
   refetch: () => Promise<void>;
+  /** API レスポンスの Room を即座にローカル state に適用する（migration 付き） */
+  applyRoom: (room: Room) => void;
   /** Realtime チャンネルが切断中・エラー中の場合 true */
   isRealtimeDisconnected: boolean;
   /** 再接続成功後、一時的に true になる（5秒間） */
@@ -71,6 +73,13 @@ export function useRoomRealtime(roomId: string | null): UseRoomRealtimeResult {
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   // 初回接続かどうか（fetchInitialData と SUBSCRIBED refetch の競合防止）
   const isInitialSubscribeRef = useRef(true);
+
+  // API レスポンスの Room を即座にローカル state に適用する
+  const applyRoom = useCallback((r: Room) => {
+    const roomData = { ...r };
+    roomData.template = migrateTemplate(roomData.template);
+    setRoom(roomData);
+  }, []);
 
   // 切断→復帰時にバナーを5秒間表示するヘルパー
   const markReconnected = useCallback(() => {
@@ -375,5 +384,5 @@ export function useRoomRealtime(roomId: string | null): UseRoomRealtimeResult {
     return () => subscription.remove();
   }, []);
 
-  return { room, loading, error, refetch, isRealtimeDisconnected, isReconnected };
+  return { room, loading, error, refetch, applyRoom, isRealtimeDisconnected, isReconnected };
 }
