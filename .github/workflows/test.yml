@@ -33,6 +33,7 @@ jobs:
 
       - name: Load cached Docker images
         if: steps.docker-cache.outputs.cache-hit == 'true'
+        continue-on-error: true
         run: docker load --input /tmp/supabase-docker-cache/images.tar
 
       # テストに不要なサービスを除外して起動（studio, inbucket, edge-runtime, logflare, vector）
