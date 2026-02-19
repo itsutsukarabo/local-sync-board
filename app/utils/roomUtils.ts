@@ -53,7 +53,7 @@ export const DEFAULT_MAHJONG_TEMPLATE: GameTemplate = {
   layoutMode: "mahjong",
   maxPlayers: 4,
   potEnabled: true,
-  variables: [{ key: "score", label: "点数", initial: 25000, quickAmounts: [8000, 12000] }],
+  variables: [{ key: "score", label: "点数", initial: 25000 }],
   potActions: [
     { id: "riichi", label: "リーチ", transfers: [{ variable: "score", amount: 1000 }] },
   ],

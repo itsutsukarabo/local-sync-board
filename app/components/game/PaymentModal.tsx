@@ -15,7 +15,14 @@ interface PaymentModalProps {
   onClose: () => void;
   onConfirm: (transfers: { variable: string; amount: number }[]) => void;
   variables: Variable[];
+  fromName: string;
+  toName: string;
   isProcessing?: boolean;
+}
+
+function getSteps(key: string): number[] {
+  if (key === "score") return [10000, 1000, 100];
+  return [10, 1];
 }
 
 export default function PaymentModal({
@@ -23,9 +30,10 @@ export default function PaymentModal({
   onClose,
   onConfirm,
   variables,
+  fromName,
+  toName,
   isProcessing = false,
 }: PaymentModalProps) {
-  // 各変数の金額を管理（文字列で保持）
   const [amounts, setAmounts] = useState<{ [key: string]: string }>({});
 
   // モーダルが開いた瞬間だけ全変数を空欄で初期化
@@ -43,17 +51,17 @@ export default function PaymentModal({
   }, [visible]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleAmountChange = (key: string, value: string) => {
-    // 数字のみ許可（マイナス不可）
     const cleaned = value.replace(/[^0-9]/g, "");
     setAmounts((prev) => ({ ...prev, [key]: cleaned }));
   };
 
-  const handleQuickAmount = (key: string, amount: number) => {
-    setAmounts((prev) => ({ ...prev, [key]: amount.toString() }));
+  const handleStep = (key: string, delta: number) => {
+    const current = parseInt(amounts[key] || "0", 10);
+    const next = Math.max(0, current + delta);
+    setAmounts((prev) => ({ ...prev, [key]: next.toString() }));
   };
 
   const handleConfirm = () => {
-    // 0でない値を持つ変数のみtransfersに含める
     const transfers = variables
       .map((v) => ({
         variable: v.key,
@@ -61,14 +69,10 @@ export default function PaymentModal({
       }))
       .filter((t) => t.amount !== 0);
 
-    if (transfers.length === 0) {
-      return;
-    }
-
+    if (transfers.length === 0) return;
     onConfirm(transfers);
   };
 
-  // 1つ以上の変数が0でない値を持っているか
   const hasValidAmount = variables.some((v) => {
     const amount = parseInt(amounts[v.key] || "0", 10);
     return amount !== 0;
@@ -83,7 +87,7 @@ export default function PaymentModal({
     >
       <View style={styles.overlay}>
         <View style={styles.modal}>
-          <Text style={styles.title}>支払い金額を入力</Text>
+          <Text style={styles.title}>{fromName} → {toName}</Text>
 
           <ScrollView style={styles.variableList}>
             {variables.map((variable) => (
@@ -104,24 +108,37 @@ export default function PaymentModal({
                   />
                 </View>
 
-                {/* クイック選択ボタン（quickAmountsが設定されている場合のみ） */}
-                {variable.quickAmounts && variable.quickAmounts.length > 0 && (
-                  <View style={styles.quickButtons}>
-                    {variable.quickAmounts.map((quickAmount) => (
+                {/* スプリットボタン（横一列） */}
+                <View style={styles.splitRow}>
+                  {getSteps(variable.key).map((step) => (
+                    <View key={step} style={styles.splitButton}>
+                      {/* 左半分: 青 / 減算 */}
                       <TouchableOpacity
-                        key={quickAmount}
-                        style={styles.quickButton}
-                        onPress={() =>
-                          handleQuickAmount(variable.key, quickAmount)
-                        }
+                        style={[styles.splitHalf, styles.splitHalfLeft]}
+                        onPress={() => handleStep(variable.key, -step)}
+                        activeOpacity={0.7}
                       >
-                        <Text style={styles.quickButtonText}>
-                          {quickAmount.toLocaleString()}
-                        </Text>
+                        <Text style={styles.splitMinusIcon}>−</Text>
                       </TouchableOpacity>
-                    ))}
-                  </View>
-                )}
+
+                      {/* 右半分: 赤 / 加算 */}
+                      <TouchableOpacity
+                        style={[styles.splitHalf, styles.splitHalfRight]}
+                        onPress={() => handleStep(variable.key, step)}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={styles.splitPlusIcon}>+</Text>
+                      </TouchableOpacity>
+
+                      {/* 中央数値ラベル（タッチ透過） */}
+                      <View style={styles.splitCenterOverlay} pointerEvents="none">
+                        <Text style={styles.splitCenterText}>
+                          {step.toLocaleString()}
+                        </Text>
+                      </View>
+                    </View>
+                  ))}
+                </View>
               </View>
             ))}
           </ScrollView>
@@ -208,26 +225,62 @@ const styles = StyleSheet.create({
     width: 120,
     backgroundColor: "#f9fafb",
   },
-  quickButtons: {
+  // スプリットボタン行
+  splitRow: {
     flexDirection: "row",
-    flexWrap: "wrap",
-    marginTop: 8,
-    justifyContent: "flex-end",
     gap: 6,
+    marginTop: 8,
   },
-  quickButton: {
-    backgroundColor: "#f3f4f6",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 6,
+  splitButton: {
+    flex: 1,
+    flexDirection: "row",
+    height: 52,
+    borderRadius: 8,
+    overflow: "hidden",
     borderWidth: 1,
-    borderColor: "#e5e7eb",
+    borderColor: "#d1d5db",
+    position: "relative",
   },
-  quickButtonText: {
-    fontSize: 14,
-    color: "#374151",
-    fontWeight: "500",
+  splitHalf: {
+    flex: 1,
   },
+  splitHalfLeft: {
+    backgroundColor: "#dbeafe",
+  },
+  splitHalfRight: {
+    backgroundColor: "#fee2e2",
+  },
+  splitMinusIcon: {
+    position: "absolute",
+    top: 4,
+    left: 5,
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#1e40af",
+  },
+  splitPlusIcon: {
+    position: "absolute",
+    top: 4,
+    right: 5,
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#991b1b",
+  },
+  splitCenterOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  splitCenterText: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#1f2937",
+  },
+  // アクションボタン
   actions: {
     flexDirection: "row",
     justifyContent: "space-between",

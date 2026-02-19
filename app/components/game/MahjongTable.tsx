@@ -160,6 +160,11 @@ export default function MahjongTable({
     [paymentModal, onTransfer]
   );
 
+  const resolvePlayerName = (id: string): string => {
+    if (id === "__pot__") return "供託金";
+    return seats.find((s) => s?.userId === id)?.displayName ?? id;
+  };
+
   // モーダル表示中のプレイヤー情報を取得
   const infoModalSeat = playerInfoModal
     ? seats[playerInfoModal.seatIndex]
@@ -286,6 +291,8 @@ export default function MahjongTable({
           onClose={() => setPaymentModal(null)}
           onConfirm={handlePaymentConfirm}
           variables={variables}
+          fromName={resolvePlayerName(paymentModal.fromId)}
+          toName={resolvePlayerName(paymentModal.toId)}
           isProcessing={isProcessing}
         />
       )}
