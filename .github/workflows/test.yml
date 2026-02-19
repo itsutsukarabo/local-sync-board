@@ -1,4 +1,4 @@
-name: Integration Tests
+name: Test and Notify
 
 on:
   push:
@@ -51,3 +51,12 @@ jobs:
       - run: npm ci
 
       - run: npm test
+
+      - name: Slack Notification
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          fields: repo,message,commit,author,action,eventName,ref,workflow,job,took
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        if: always()
