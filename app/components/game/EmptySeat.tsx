@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from "react-native";
 import { SeatPosition } from "../../types";
 import { getSeatStyle } from "../../utils/seatUtils";
 
@@ -9,6 +9,7 @@ interface EmptySeatProps {
   onJoinSeat: (seatIndex: number) => void;
   onLongPressJoinFake?: (seatIndex: number) => void;
   isUserSeated?: boolean;
+  isJoining?: boolean;
 }
 
 export default function EmptySeat({
@@ -17,6 +18,7 @@ export default function EmptySeat({
   onJoinSeat,
   onLongPressJoinFake,
   isUserSeated = false,
+  isJoining = false,
 }: EmptySeatProps) {
   const positionStyle = getSeatStyle(position);
   const [showGuestHint, setShowGuestHint] = useState(false);
@@ -56,6 +58,17 @@ export default function EmptySeat({
     handleLongPress = canCreateGuest ? () => onLongPressJoinFake!(seatIndex) : undefined;
   }
 
+  if (isJoining) {
+    return (
+      <View style={[styles.container, positionStyle]}>
+        <View style={[styles.button, styles.buttonDisabled]}>
+          <ActivityIndicator size="small" color="#6b7280" />
+          <Text style={styles.label}>着席中...</Text>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View style={[styles.container, positionStyle]}>
       <TouchableOpacity
@@ -77,6 +90,9 @@ const styles = StyleSheet.create({
   container: {
     alignItems: "center",
     justifyContent: "center",
+  },
+  buttonDisabled: {
+    opacity: 0.6,
   },
   button: {
     backgroundColor: "#f3f4f6",
