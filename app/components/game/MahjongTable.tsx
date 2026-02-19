@@ -35,6 +35,8 @@ interface MahjongTableProps {
   potActions?: PotAction[];
   connectionStatuses?: Map<string, ConnectionStatus>;
   isProcessing?: boolean;
+  isJoining?: boolean;
+  joiningGuestSeats?: Set<number>;
 }
 
 export default function MahjongTable({
@@ -51,6 +53,8 @@ export default function MahjongTable({
   potActions = [],
   connectionStatuses,
   isProcessing = false,
+  isJoining = false,
+  joiningGuestSeats,
 }: MahjongTableProps) {
   const containerRef = useRef<View>(null);
 
@@ -191,9 +195,9 @@ export default function MahjongTable({
           }
 
           if (!seat || !seat.userId) {
-            if (isUserSeated && !isHost) {
-              return null;
-            }
+            // 着席済み非ホスト or 通常着席API待ち中 → 非表示
+            if ((isUserSeated && !isHost) || isJoining) return null;
+
             return (
               <EmptySeat
                 key={`empty-${index}`}
@@ -202,6 +206,7 @@ export default function MahjongTable({
                 onJoinSeat={onJoinSeat}
                 onLongPressJoinFake={isHost ? onJoinFakeSeat : undefined}
                 isUserSeated={isUserSeated}
+                isJoining={joiningGuestSeats?.has(index) ?? false}
               />
             );
           }

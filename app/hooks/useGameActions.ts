@@ -3,7 +3,7 @@
  * game/[id].tsx のイベントハンドラ・操作状態を集約
  */
 
-import { useEffect, useCallback, useState } from "react";
+import { useEffect, useCallback, useState, useRef } from "react";
 import { Alert, Platform } from "react-native";
 import * as Haptics from "expo-haptics";
 import {
@@ -37,6 +37,8 @@ export interface UseGameActionsParams {
 
 export interface UseGameActionsResult {
   isProcessing: boolean;
+  isJoining: boolean;
+  joiningGuestSeats: Set<number>;
   settlementCount: number;
   handleJoinSeat: (seatIndex: number) => Promise<void>;
   handleJoinFakeSeat: (seatIndex: number) => Promise<void>;
@@ -64,6 +66,9 @@ export function useGameActions({
   showToast,
 }: UseGameActionsParams): UseGameActionsResult {
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isJoining, setIsJoining] = useState(false);
+  const [joiningGuestSeats, setJoiningGuestSeats] = useState<Set<number>>(new Set());
+  const guestSeatQueueRef = useRef<Promise<void>>(Promise.resolve());
   const [settlementCount, setSettlementCount] = useState(0);
 
   // 精算件数を取得（room更新時に再取得）
@@ -82,10 +87,11 @@ export function useGameActions({
     setSettlementCount(settlements.length);
   }, [room?.id]);
 
-  // 座席に着席するハンドラー
+  // 座席に着席するハンドラー（グローバルロック）
   const handleJoinSeat = useCallback(
     async (seatIndex: number) => {
-      if (!room || !user) return;
+      if (!room || !user || isJoining) return;
+      setIsJoining(true);
 
       if (Platform.OS !== "web") {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -99,88 +105,88 @@ export function useGameActions({
       } catch (error) {
         console.error("Error joining seat:", error);
         Alert.alert("エラー", "座席への着席に失敗しました");
+      } finally {
+        setIsJoining(false);
       }
     },
-    [room, user]
+    [room, user, isJoining]
   );
 
-  // ゲストを座席に着席させるハンドラー（ホスト長押し）
+  // ゲストを座席に着席させるハンドラー（per-seat スピナー + キュー直列化）
   const handleJoinFakeSeat = useCallback(
     async (seatIndex: number) => {
-      if (!room || !user) return;
+      if (!room || !user || joiningGuestSeats.has(seatIndex)) return;
 
-      // 離席済みゲスト（current_stateにいるがseatsにいないfake_*）を検索
-      const seatedFakeIds = new Set(
-        (room.seats || [])
-          .filter((s) => s && s.isFake && s.userId)
-          .map((s) => s!.userId)
-      );
-      const unseatedFakes = Object.keys(room.current_state || {}).filter(
-        (id) => id.startsWith("fake_") && !seatedFakeIds.has(id)
-      );
+      // 押した席だけ即座にスピナー表示
+      setJoiningGuestSeats((prev) => new Set(prev).add(seatIndex));
 
-      if (unseatedFakes.length === 0) {
+      const roomId = room.id;
+      const previousTail = guestSeatQueueRef.current;
+
+      // 前のゲスト着席 API 完了後に自分の処理を実行
+      const myTask = previousTail.then(async () => {
         try {
-          const { error } = await joinFakeSeat(room.id, seatIndex);
-          if (error) {
-            Alert.alert("エラー", error.message);
+          // 離席済みゲスト（current_stateにいるがseatsにいないfake_*）を検索
+          const seatedFakeIds = new Set(
+            (room.seats || [])
+              .filter((s) => s?.isFake && s.userId)
+              .map((s) => s!.userId)
+          );
+          const unseatedFakes = Object.keys(room.current_state || {}).filter(
+            (id) => id.startsWith("fake_") && !seatedFakeIds.has(id)
+          );
+
+          if (unseatedFakes.length === 0) {
+            const { error } = await joinFakeSeat(roomId, seatIndex);
+            if (error) Alert.alert("エラー", error.message);
+            return;
           }
-        } catch (error) {
-          console.error("Error joining fake seat:", error);
-          Alert.alert("エラー", "ゲストの作成に失敗しました");
+
+          // 離席済みゲストがいる場合は選択UIを表示
+          // Alert は同期なのでキュータスクは即完了（Alert 内 onPress は別フロー）
+          const buttons: any[] = unseatedFakes.map((fakeId) => {
+            const playerState = room.current_state[fakeId];
+            const score = playerState?.score ?? 0;
+            const guestName = playerState?.__displayName__ || fakeId;
+            return {
+              text: `${guestName} (点数: ${score.toLocaleString()})`,
+              onPress: async () => {
+                const { error } = await reseatFakePlayer(roomId, fakeId, seatIndex);
+                if (error) Alert.alert("エラー", error.message);
+              },
+            };
+          });
+
+          buttons.push({
+            text: "新規作成",
+            onPress: async () => {
+              const { error } = await joinFakeSeat(roomId, seatIndex);
+              if (error) Alert.alert("エラー", error.message);
+            },
+          });
+          buttons.push({ text: "キャンセル", style: "cancel" as const });
+
+          Alert.alert(
+            "ゲストを選択",
+            "既存のゲストを再着席させるか、新規作成しますか？",
+            buttons
+          );
+        } catch (err) {
+          console.error("Error joining fake seat:", err);
+          Alert.alert("エラー", "ゲストの着席に失敗しました");
+        } finally {
+          setJoiningGuestSeats((prev) => {
+            const s = new Set(prev);
+            s.delete(seatIndex);
+            return s;
+          });
         }
-        return;
-      }
-
-      // 離席済みゲストがいる場合は選択UIを表示
-      const buttons: any[] = unseatedFakes.map((fakeId) => {
-        const playerState = room.current_state[fakeId];
-        const score = playerState?.score ?? 0;
-        const guestName = playerState?.__displayName__ || fakeId;
-        return {
-          text: `${guestName} (点数: ${score.toLocaleString()})`,
-          onPress: async () => {
-            try {
-              const { error } = await reseatFakePlayer(
-                room.id,
-                fakeId,
-                seatIndex
-              );
-              if (error) {
-                Alert.alert("エラー", error.message);
-              }
-            } catch (error) {
-              console.error("Error reseating fake player:", error);
-              Alert.alert("エラー", "ゲストの再着席に失敗しました");
-            }
-          },
-        };
       });
 
-      buttons.push({
-        text: "新規作成",
-        onPress: async () => {
-          try {
-            const { error } = await joinFakeSeat(room.id, seatIndex);
-            if (error) {
-              Alert.alert("エラー", error.message);
-            }
-          } catch (error) {
-            console.error("Error joining fake seat:", error);
-            Alert.alert("エラー", "ゲストの作成に失敗しました");
-          }
-        },
-      });
-
-      buttons.push({ text: "キャンセル", style: "cancel" });
-
-      Alert.alert(
-        "ゲストを選択",
-        "既存のゲストを再着席させるか、新規作成しますか？",
-        buttons
-      );
+      guestSeatQueueRef.current = myTask.catch(() => {});
+      await myTask;
     },
-    [room, user]
+    [room, user, joiningGuestSeats]
   );
 
   // 実ユーザーを強制離席させるハンドラー（ホスト操作）
@@ -406,6 +412,8 @@ export function useGameActions({
 
   return {
     isProcessing,
+    isJoining,
+    joiningGuestSeats,
     settlementCount,
     handleJoinSeat,
     handleJoinFakeSeat,

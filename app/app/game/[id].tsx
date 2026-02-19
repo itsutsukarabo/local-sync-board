@@ -46,6 +46,8 @@ export default function GameScreen() {
 
   const {
     isProcessing,
+    isJoining,
+    joiningGuestSeats,
     settlementCount,
     handleJoinSeat,
     handleJoinFakeSeat,
@@ -222,6 +224,12 @@ export default function GameScreen() {
           </Text>
         </View>
       )}
+      {/* 着席中バナー */}
+      {(isJoining || joiningGuestSeats.size > 0) && (
+        <View style={styles.reconnectedBanner}>
+          <Text style={styles.reconnectedBannerText}>着席中...</Text>
+        </View>
+      )}
 
       {/* メインコンテンツ */}
       {layoutMode === "mahjong" ? (
@@ -260,6 +268,8 @@ export default function GameScreen() {
               potActions={room.template.potActions || []}
               connectionStatuses={connectionStatuses}
               isProcessing={isProcessing}
+              isJoining={isJoining}
+              joiningGuestSeats={joiningGuestSeats}
             />
           </View>
 

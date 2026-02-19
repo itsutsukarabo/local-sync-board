@@ -416,7 +416,123 @@ describe("useGameActions", () => {
     });
   });
 
-  // ── 9. room が null の場合のガード ──
+  // ── 9. 着席操作の排他制御 ──
+  describe("着席操作の排他制御", () => {
+
+    // 9-1: handleJoinSeat（通常着席）= グローバルロック
+    describe("handleJoinSeat（通常着席）", () => {
+      it("実行中は isJoining が true になる", async () => {
+        let resolve: (v: any) => void;
+        mockJoinSeat.mockReturnValue(new Promise(r => { resolve = r; }));
+        const { result } = renderHook(() => useGameActions(defaultParams()));
+
+        expect(result.current.isJoining).toBe(false);
+        let p: Promise<void>;
+        act(() => { p = result.current.handleJoinSeat(2); });
+        expect(result.current.isJoining).toBe(true);
+
+        await act(async () => { resolve!({ error: null }); await p!; });
+        expect(result.current.isJoining).toBe(false);
+      });
+
+      it("isJoining が true の間は別の seatIndex もブロックされる", async () => {
+        let resolve: (v: any) => void;
+        mockJoinSeat.mockReturnValueOnce(new Promise(r => { resolve = r; }));
+        const { result } = renderHook(() => useGameActions(defaultParams()));
+
+        let p: Promise<void>;
+        act(() => { p = result.current.handleJoinSeat(2); });
+
+        act(() => { result.current.handleJoinSeat(3); }); // ブロックされる
+
+        await act(async () => { resolve!({ error: null }); await p!; });
+        expect(mockJoinSeat).toHaveBeenCalledTimes(1);
+      });
+
+      it("エラーでも isJoining が false に戻る", async () => {
+        mockJoinSeat.mockRejectedValue(new Error("network error"));
+        const { result } = renderHook(() => useGameActions(defaultParams()));
+
+        await act(async () => { await result.current.handleJoinSeat(2); });
+        expect(result.current.isJoining).toBe(false);
+      });
+    });
+
+    // 9-2: handleJoinFakeSeat（ゲスト着席）= per-seat スピナー + キュー直列
+    describe("handleJoinFakeSeat（ゲスト着席）", () => {
+      it("実行中は joiningGuestSeats にその seatIndex が含まれる", async () => {
+        let resolve: (v: any) => void;
+        mockJoinFakeSeat.mockReturnValue(new Promise(r => { resolve = r; }));
+        const params = { ...defaultParams(), room: makeRoom({ seats: [null, null, null, null], current_state: {} }) };
+        const { result } = renderHook(() => useGameActions(params));
+
+        expect(result.current.joiningGuestSeats.has(2)).toBe(false);
+        let p: Promise<void>;
+        act(() => { p = result.current.handleJoinFakeSeat(2); });
+        expect(result.current.joiningGuestSeats.has(2)).toBe(true);
+
+        await act(async () => { resolve!({ error: null }); await p!; });
+        expect(result.current.joiningGuestSeats.has(2)).toBe(false);
+      });
+
+      it("別の seatIndex はタップ可能でスピナーが表示され、API は直列に実行される", async () => {
+        let resolveFirst: (v: any) => void;
+        mockJoinFakeSeat
+          .mockReturnValueOnce(new Promise(r => { resolveFirst = r; }))
+          .mockResolvedValue({ error: null });
+
+        const params = { ...defaultParams(), room: makeRoom({ seats: [null, null, null, null], current_state: {} }) };
+        const { result } = renderHook(() => useGameActions(params));
+
+        act(() => { result.current.handleJoinFakeSeat(0); });
+        expect(result.current.joiningGuestSeats.has(0)).toBe(true);
+
+        // seat0 の .then() マイクロタスクをフラッシュして API 呼び出しを開始させる
+        await act(async () => {});
+
+        let secondPromise: Promise<void>;
+        act(() => { secondPromise = result.current.handleJoinFakeSeat(1); });
+        expect(result.current.joiningGuestSeats.has(1)).toBe(true);
+
+        // この時点では API は1回のみ（seat1 はキュー待ち）
+        expect(mockJoinFakeSeat).toHaveBeenCalledTimes(1);
+
+        // seat0 完了 → seat1 の API が直列に実行される
+        await act(async () => {
+          resolveFirst!({ error: null });
+          await secondPromise!;
+        });
+
+        expect(mockJoinFakeSeat).toHaveBeenCalledTimes(2);
+        expect(result.current.joiningGuestSeats.size).toBe(0);
+      });
+
+      it("同じ seatIndex は二重実行されない", async () => {
+        let resolve: (v: any) => void;
+        mockJoinFakeSeat.mockReturnValueOnce(new Promise(r => { resolve = r; }));
+        const params = { ...defaultParams(), room: makeRoom({ seats: [null, null, null, null], current_state: {} }) };
+        const { result } = renderHook(() => useGameActions(params));
+
+        let p: Promise<void>;
+        act(() => { p = result.current.handleJoinFakeSeat(2); });
+        act(() => { result.current.handleJoinFakeSeat(2); }); // 同じ → ブロック
+
+        await act(async () => { resolve!({ error: null }); await p!; });
+        expect(mockJoinFakeSeat).toHaveBeenCalledTimes(1);
+      });
+
+      it("エラーでも joiningGuestSeats から seatIndex が削除される", async () => {
+        mockJoinFakeSeat.mockRejectedValue(new Error("network error"));
+        const params = { ...defaultParams(), room: makeRoom({ seats: [null, null, null, null], current_state: {} }) };
+        const { result } = renderHook(() => useGameActions(params));
+
+        await act(async () => { await result.current.handleJoinFakeSeat(2); });
+        expect(result.current.joiningGuestSeats.has(2)).toBe(false);
+      });
+    });
+  });
+
+  // ── 10. room が null の場合のガード ──
   describe("null ガード", () => {
     it("room が null のとき handleTransfer は何もしない", async () => {
       const params = { ...defaultParams(), room: null };
