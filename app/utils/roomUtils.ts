@@ -55,7 +55,11 @@ export const DEFAULT_MAHJONG_TEMPLATE: GameTemplate = {
   potEnabled: true,
   variables: [{ key: "score", label: "点数", initial: 25000 }],
   potActions: [
-    { id: "riichi", label: "リーチ", transfers: [{ variable: "score", amount: 1000 }] },
+    {
+      id: "riichi",
+      label: "リーチ",
+      transfers: [{ variable: "score", amount: 1000 }],
+    },
   ],
   hostPermissions: [
     "transfer_score",
@@ -64,6 +68,7 @@ export const DEFAULT_MAHJONG_TEMPLATE: GameTemplate = {
     "force_edit",
     "reset_scores",
     "edit_template",
+    "edit_counter",
   ],
   playerPermissions: ["transfer_score", "retrieve_pot"],
   settlementConfig: {
@@ -156,15 +161,17 @@ export function migrateTemplate(oldTemplate: any): GameTemplate {
         "edit_template",
       ],
       playerPermissions: template.permissions.filter(
-        (p: string) => p !== "finalize_game"
+        (p: string) => p !== "finalize_game",
       ),
       potActions: template.potActions || [
-        { id: "default", label: "供託", transfers: [{ variable: "score", amount: 1000 }] },
+        {
+          id: "default",
+          label: "供託",
+          transfers: [{ variable: "score", amount: 1000 }],
+        },
       ],
       // riichi変数を削除
-      variables: template.variables.filter(
-        (v: any) => v.key !== "riichi"
-      ),
+      variables: template.variables.filter((v: any) => v.key !== "riichi"),
     };
   }
 

@@ -1,27 +1,79 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { View, StyleSheet, TouchableOpacity, Text } from "react-native";
 
-export default function CounterCard() {
-  const [value, setValue] = useState(0);
+interface CounterCardProps {
+  serverValue: number;
+  canEdit: boolean;
+  onCommit: (expectedValue: number, newValue: number) => Promise<{ conflictValue?: number }>;
+}
+
+export default function CounterCard({ serverValue, canEdit, onCommit }: CounterCardProps) {
+  const [localValue, setLocalValue] = useState(serverValue);
+
+  const serverValueRef = useRef(serverValue);
+  const baseValueRef = useRef(serverValue);
+  const localValueRef = useRef(serverValue);
+  const isEditingRef = useRef(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // サーバー値が更新されたとき（Realtime経由）
+  useEffect(() => {
+    serverValueRef.current = serverValue;
+    if (!isEditingRef.current) {
+      baseValueRef.current = serverValue;
+      localValueRef.current = serverValue;
+      setLocalValue(serverValue);
+    }
+  }, [serverValue]);
+
+  const handlePress = (delta: number) => {
+    if (!isEditingRef.current) {
+      // 編集セッション開始: この時点のサーバー値を expected として記録
+      baseValueRef.current = serverValueRef.current;
+      isEditingRef.current = true;
+    }
+    const next = localValueRef.current + delta;
+    localValueRef.current = next;
+    setLocalValue(next);
+
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(async () => {
+      isEditingRef.current = false;
+      if (localValueRef.current !== serverValueRef.current) {
+        const result = await onCommit(baseValueRef.current, localValueRef.current);
+        if (result.conflictValue !== undefined) {
+          // 競合: DBの現在値に強制同期
+          serverValueRef.current = result.conflictValue;
+          baseValueRef.current = result.conflictValue;
+          localValueRef.current = result.conflictValue;
+          setLocalValue(result.conflictValue);
+        }
+      }
+    }, 3000);
+  };
 
   return (
     <View style={styles.card}>
-      <TouchableOpacity
-        style={styles.counterHalf}
-        onPress={() => setValue((v) => v - 1)}
-        activeOpacity={0.7}
-      >
-        <Text style={styles.counterMinusIcon}>−</Text>
-      </TouchableOpacity>
-      <TouchableOpacity
-        style={styles.counterHalf}
-        onPress={() => setValue((v) => v + 1)}
-        activeOpacity={0.7}
-      >
-        <Text style={styles.counterPlusIcon}>+</Text>
-      </TouchableOpacity>
+      {canEdit && (
+        <TouchableOpacity
+          style={styles.counterHalf}
+          onPress={() => handlePress(-1)}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.counterMinusIcon}>−</Text>
+        </TouchableOpacity>
+      )}
+      {canEdit && (
+        <TouchableOpacity
+          style={styles.counterHalf}
+          onPress={() => handlePress(1)}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.counterPlusIcon}>+</Text>
+        </TouchableOpacity>
+      )}
       <View style={styles.counterCenterOverlay} pointerEvents="none">
-        <Text style={styles.counterCenterText}>{value}</Text>
+        <Text style={styles.counterCenterText}>{localValue}</Text>
       </View>
     </View>
   );

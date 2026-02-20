@@ -38,6 +38,9 @@ interface MahjongTableProps {
   isProcessing?: boolean;
   isJoining?: boolean;
   joiningGuestSeats?: Set<number>;
+  counterValue?: number; // undefined = カウンター非表示
+  canEditCounter?: boolean;
+  onCounterCommit?: (expected: number, newVal: number) => Promise<{ conflictValue?: number }>;
 }
 
 export default function MahjongTable({
@@ -56,6 +59,9 @@ export default function MahjongTable({
   isProcessing = false,
   isJoining = false,
   joiningGuestSeats,
+  counterValue,
+  canEditCounter,
+  onCounterCommit,
 }: MahjongTableProps) {
   const containerRef = useRef<View>(null);
 
@@ -273,9 +279,15 @@ export default function MahjongTable({
         )}
 
         {/* カウンター */}
-        <View style={styles.counterContainer}>
-          <CounterCard />
-        </View>
+        {counterValue !== undefined && (
+          <View style={styles.counterContainer}>
+            <CounterCard
+              serverValue={counterValue}
+              canEdit={canEditCounter ?? false}
+              onCommit={onCounterCommit ?? (() => Promise.resolve({}))}
+            />
+          </View>
+        )}
       </View>
 
       {/* 流体矢印の描画 */}

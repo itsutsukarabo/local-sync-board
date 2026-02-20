@@ -97,7 +97,8 @@ export type PermissionKey =
   | "finalize_game"
   | "force_edit"
   | "reset_scores"
-  | "edit_template";
+  | "edit_template"
+  | "edit_counter";
 
 /**
  * Pot操作の個別転送定義
@@ -243,6 +244,7 @@ export interface RecentLogEntry {
 export type GameState = {
   __pot__?: PotState; // 供託金エリア（予約キー）
   __recent_log__?: RecentLogEntry[]; // 直近の操作ログ（プレビュー用、最新5件）
+  __count__?: number; // カウンター同期値（予約キー）
 } & {
   [userId: string]: PlayerState; // プレイヤー
 };

@@ -1133,6 +1133,31 @@ export async function reseatFakePlayer(
 }
 
 /**
+ * カウンター値を Compare-and-Swap で更新（DB側RPCで原子的に処理）
+ * @param roomId - ルームID
+ * @param expectedValue - 編集開始時点のサーバー値（CASのexpected）
+ * @param newValue - 新しいカウンター値
+ * @returns error または conflictValue（競合時のDB現在値）
+ */
+export async function updateCounter(
+  roomId: string,
+  expectedValue: number,
+  newValue: number
+): Promise<{ error: Error | null; conflictValue?: number }> {
+  apiLog("updateCounter", { roomId, expectedValue, newValue });
+  const client = supabase;
+  const { data, error } = await client.rpc("rpc_update_counter", {
+    p_room_id: roomId,
+    p_expected_value: expectedValue,
+    p_new_value: newValue,
+  });
+  if (error) return { error: new Error(error.message) };
+  if (data?.error) return { error: new Error(data.error) };
+  if (data?.conflict) return { error: null, conflictValue: data.current_value as number };
+  return { error: null };
+}
+
+/**
  * 精算結果を保存し、スコアを初期値にリセット（DB側RPCで原子的に処理）
  * @param roomId - ルームID
  * @param settlement - 精算結果オブジェクト

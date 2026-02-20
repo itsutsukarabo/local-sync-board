@@ -26,7 +26,7 @@ import MahjongTable from "../../components/game/MahjongTable";
 import HistoryLog from "../../components/game/HistoryLog";
 import Toast from "../../components/common/Toast";
 import { useToast } from "../../hooks/useToast";
-import { leaveSeat } from "../../lib/roomApi";
+import { leaveSeat, updateCounter } from "../../lib/roomApi";
 import { RecentLogEntry } from "../../types";
 
 export default function GameScreen() {
@@ -135,6 +135,16 @@ export default function GameScreen() {
     return () => subscription.remove();
   }, [handleBack]);
 
+  // カウンターコミットハンドラー（Hooksの順序を守るため early return の前に定義）
+  const handleCounterCommit = useCallback(
+    async (expectedValue: number, newValue: number) => {
+      const result = await updateCounter(room?.id ?? "", expectedValue, newValue);
+      if (result.error) showToast("error", result.error.message);
+      return { conflictValue: result.conflictValue };
+    },
+    [room?.id, showToast]
+  );
+
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
@@ -169,6 +179,12 @@ export default function GameScreen() {
   // レイアウトモードを取得
   const layoutMode = room.template.layoutMode || "list";
   const isPotEnabled = room.template.potEnabled || false;
+
+  // カウンター関連（麻雀モードでは常に表示、編集は edit_counter 権限で制御）
+  const counterValue = layoutMode === "mahjong"
+    ? ((room.current_state.__count__ as number | undefined) ?? 0)
+    : undefined;
+  const canEditCounter = isHost && room.template.hostPermissions.includes("edit_counter");
 
   // 直近の操作ログを取得（プレビュー用）
   const recentLog: RecentLogEntry[] = room?.current_state?.__recent_log__ || [];
@@ -270,6 +286,9 @@ export default function GameScreen() {
               isProcessing={isProcessing}
               isJoining={isJoining}
               joiningGuestSeats={joiningGuestSeats}
+              counterValue={counterValue}
+              canEditCounter={canEditCounter}
+              onCounterCommit={handleCounterCommit}
             />
           </View>
 
