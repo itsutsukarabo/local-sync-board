@@ -649,6 +649,69 @@ describe("useGameActions", () => {
         await act(async () => { await result.current.handleJoinFakeSeat(2); });
         expect(result.current.joiningGuestSeats.has(2)).toBe(false);
       });
+
+      // WebSocket 非確立時の即時反映（再発防止）
+      it("joinFakeSeat 成功時に applyRoom が呼ばれる（離席済みゲストなし）", async () => {
+        const updatedRoom = makeRoom({ seats: [null, null, null, null] });
+        mockJoinFakeSeat.mockResolvedValue({ room: updatedRoom, error: null });
+        const params = { ...defaultParams(), room: makeRoom({ seats: [null, null, null, null], current_state: {} }) };
+        const { result } = renderHook(() => useGameActions(params));
+
+        await act(async () => { await result.current.handleJoinFakeSeat(2); });
+
+        expect(mockApplyRoom).toHaveBeenCalledWith(updatedRoom);
+        expect(mockApplyRoom).toHaveBeenCalledTimes(1);
+      });
+
+      it("joinFakeSeat エラー時は applyRoom が呼ばれない", async () => {
+        mockJoinFakeSeat.mockResolvedValue({ room: null, error: new Error("作成失敗") });
+        const params = { ...defaultParams(), room: makeRoom({ seats: [null, null, null, null], current_state: {} }) };
+        const { result } = renderHook(() => useGameActions(params));
+
+        await act(async () => { await result.current.handleJoinFakeSeat(2); });
+
+        expect(mockApplyRoom).not.toHaveBeenCalled();
+      });
+
+      it("reseatFakePlayer 成功時に applyRoom が呼ばれる（離席済みゲストあり）", async () => {
+        const updatedRoom = makeRoom();
+        mockReseatFakePlayer.mockResolvedValue({ room: updatedRoom, error: null });
+        const roomWithUnseatedFake = makeRoom({
+          seats: [null, null, null, null],
+          current_state: { "fake_001": { score: 10000, __displayName__: "プレイヤーA" } },
+        });
+        const params = { ...defaultParams(), room: roomWithUnseatedFake };
+        const { result } = renderHook(() => useGameActions(params));
+
+        await act(async () => { await result.current.handleJoinFakeSeat(2); });
+
+        // Alert で既存ゲストボタン（index 0）の onPress を実行
+        const onPress = mockAlert.mock.calls[0][2][0].onPress;
+        await act(async () => { await onPress(); });
+
+        expect(mockApplyRoom).toHaveBeenCalledWith(updatedRoom);
+        expect(mockApplyRoom).toHaveBeenCalledTimes(1);
+      });
+
+      it("新規作成ボタン押下時に applyRoom が呼ばれる（離席済みゲストあり）", async () => {
+        const updatedRoom = makeRoom();
+        mockJoinFakeSeat.mockResolvedValue({ room: updatedRoom, error: null });
+        const roomWithUnseatedFake = makeRoom({
+          seats: [null, null, null, null],
+          current_state: { "fake_001": { score: 10000, __displayName__: "プレイヤーA" } },
+        });
+        const params = { ...defaultParams(), room: roomWithUnseatedFake };
+        const { result } = renderHook(() => useGameActions(params));
+
+        await act(async () => { await result.current.handleJoinFakeSeat(2); });
+
+        // Alert ボタン: [既存ゲスト, 新規作成, キャンセル] → index 1 が新規作成
+        const onPress = mockAlert.mock.calls[0][2][1].onPress;
+        await act(async () => { await onPress(); });
+
+        expect(mockApplyRoom).toHaveBeenCalledWith(updatedRoom);
+        expect(mockApplyRoom).toHaveBeenCalledTimes(1);
+      });
     });
   });
 

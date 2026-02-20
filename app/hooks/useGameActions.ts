@@ -141,8 +141,9 @@ export function useGameActions({
           );
 
           if (unseatedFakes.length === 0) {
-            const { error } = await joinFakeSeat(roomId, seatIndex);
+            const { room: updatedRoom, error } = await joinFakeSeat(roomId, seatIndex);
             if (error) Alert.alert("エラー", error.message);
+            else if (updatedRoom) applyRoom(updatedRoom);
             return;
           }
 
@@ -155,8 +156,9 @@ export function useGameActions({
             return {
               text: `${guestName} (点数: ${score.toLocaleString()})`,
               onPress: async () => {
-                const { error } = await reseatFakePlayer(roomId, fakeId, seatIndex);
+                const { room: updatedRoom, error } = await reseatFakePlayer(roomId, fakeId, seatIndex);
                 if (error) Alert.alert("エラー", error.message);
+                else if (updatedRoom) applyRoom(updatedRoom);
               },
             };
           });
@@ -164,8 +166,9 @@ export function useGameActions({
           buttons.push({
             text: "新規作成",
             onPress: async () => {
-              const { error } = await joinFakeSeat(roomId, seatIndex);
+              const { room: updatedRoom, error } = await joinFakeSeat(roomId, seatIndex);
               if (error) Alert.alert("エラー", error.message);
+              else if (updatedRoom) applyRoom(updatedRoom);
             },
           });
           buttons.push({ text: "キャンセル", style: "cancel" as const });
@@ -190,7 +193,7 @@ export function useGameActions({
       guestSeatQueueRef.current = myTask.catch(() => {});
       await myTask;
     },
-    [room, user, joiningGuestSeats]
+    [room, user, joiningGuestSeats, applyRoom]
   );
 
   // 実ユーザーを強制離席させるハンドラー（ホスト操作）

@@ -877,7 +877,7 @@ export async function forceLeaveSeat(
 export async function joinFakeSeat(
   roomId: string,
   seatIndex: number
-): Promise<{ error: Error | null }> {
+): Promise<{ room: Room | null; error: Error | null }> {
   apiLog("joinFakeSeat", { roomId, seatIndex });
   try {
     // 1. 現在のユーザーを取得（ホスト確認用）
@@ -969,22 +969,25 @@ export async function joinFakeSeat(
     }
 
     // 9. 一括DB更新
-    const { error: updateError } = await supabase
+    const { data: updateData, error: updateError } = await supabase
       .from("rooms")
       .update({
         seats,
         current_state: currentState,
       })
-      .eq("id", roomId);
+      .eq("id", roomId)
+      .select()
+      .single();
 
     if (updateError) {
       throw updateError;
     }
 
-    return { error: null };
+    return { room: updateData as Room, error: null };
   } catch (error) {
     console.error("Error joining fake seat:", error);
     return {
+      room: null,
       error:
         error instanceof Error
           ? error
@@ -1064,7 +1067,7 @@ export async function reseatFakePlayer(
   roomId: string,
   fakeUserId: string,
   seatIndex: number
-): Promise<{ error: Error | null }> {
+): Promise<{ room: Room | null; error: Error | null }> {
   apiLog("reseatFakePlayer", { roomId, fakeUserId, seatIndex });
   try {
     // 1. 最新のルーム情報を取得
@@ -1105,19 +1108,22 @@ export async function reseatFakePlayer(
     };
 
     // 6. 一括DB更新（current_stateは変更なし）
-    const { error: updateError } = await supabase
+    const { data: updateData, error: updateError } = await supabase
       .from("rooms")
       .update({ seats })
-      .eq("id", roomId);
+      .eq("id", roomId)
+      .select()
+      .single();
 
     if (updateError) {
       throw updateError;
     }
 
-    return { error: null };
+    return { room: updateData as Room, error: null };
   } catch (error) {
     console.error("Error reseating fake player:", error);
     return {
+      room: null,
       error:
         error instanceof Error
           ? error
