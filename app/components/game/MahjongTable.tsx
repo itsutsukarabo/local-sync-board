@@ -20,6 +20,7 @@ import PotActionSelectModal from "./PotActionSelectModal";
 import PlayerInfoModal from "./PlayerInfoModal";
 import EmptySeat from "./EmptySeat";
 import FluidArrow from "./FluidArrow";
+import CounterCard from "./CounterCard";
 
 interface MahjongTableProps {
   gameState: GameState;
@@ -270,6 +271,11 @@ export default function MahjongTable({
             }}
           />
         )}
+
+        {/* カウンター */}
+        <View style={styles.counterContainer}>
+          <CounterCard />
+        </View>
       </View>
 
       {/* 流体矢印の描画 */}
@@ -342,5 +348,10 @@ const styles = StyleSheet.create({
     flex: 1,
     position: "relative",
     paddingVertical: 20,
+  },
+  counterContainer: {
+    position: "absolute",
+    bottom: 15,
+    right: 12,
   },
 });
