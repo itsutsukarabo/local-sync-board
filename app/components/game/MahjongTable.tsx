@@ -27,6 +27,7 @@ interface MahjongTableProps {
   variables: Variable[];
   currentUserId: string;
   hostUserId: string;
+  coHostIds?: string[];
   seats: (SeatInfo | null)[]; // 座席配列
   onTransfer: (fromId: string, toId: string, transfers: { variable: string; amount: number }[]) => Promise<void>;
   onJoinSeat: (seatIndex: number) => Promise<void>; // 座席に着席
@@ -48,6 +49,7 @@ export default function MahjongTable({
   variables,
   currentUserId,
   hostUserId,
+  coHostIds,
   seats,
   onTransfer,
   onJoinSeat,
@@ -88,7 +90,7 @@ export default function MahjongTable({
   const isUserSeated = seats.some(
     (seat) => seat && seat.userId === currentUserId
   );
-  const isHost = currentUserId === hostUserId;
+  const isHost = currentUserId === hostUserId || (coHostIds ?? []).includes(currentUserId);
 
   // --- ドロップ処理 ---
   const handleDrop = useCallback(

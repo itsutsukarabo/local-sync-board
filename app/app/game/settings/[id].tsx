@@ -20,12 +20,14 @@ import { useRoomRealtime } from "../../../hooks/useRoomRealtime";
 import { useAuth } from "../../../hooks/useAuth";
 import { updateTemplate } from "../../../lib/roomApi";
 import { Variable, PotAction, SettlementConfig } from "../../../types";
+import { isHostUser } from "../../../utils/roomUtils";
 import { DEFAULT_FORCE_LEAVE_TIMEOUT_SEC } from "../../../constants/connection";
 import VariableEditor from "../../../components/settings/VariableEditor";
 import PotActionEditor from "../../../components/settings/PotActionEditor";
 import SettlementConfigEditor from "../../../components/settings/SettlementConfigEditor";
 import PlayerScoreEditor from "../../../components/settings/PlayerScoreEditor";
 import ResetSection from "../../../components/settings/ResetSection";
+import CoHostEditor from "../../../components/settings/CoHostEditor";
 
 export default function RoomSettingsScreen() {
   const router = useRouter();
@@ -57,7 +59,7 @@ export default function RoomSettingsScreen() {
     );
   }
 
-  const isHost = user?.id === room.host_user_id;
+  const isHost = isHostUser(user?.id, room);
 
   // ホスト以外はアクセス不可
   if (!isHost) {
@@ -253,6 +255,17 @@ function SettingsContent({
             seats={room.seats || [null, null, null, null]}
           />
         </View>
+
+        {/* ホスト権限管理 - 元の作成者のみ表示 */}
+        {user?.id === room.host_user_id && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>ホスト権限管理</Text>
+            <Text style={styles.sectionDescription}>
+              着席中のプレイヤーにホスト権限を付与・剥奪できます
+            </Text>
+            <CoHostEditor room={room} />
+          </View>
+        )}
 
         {/* 接続設定セクション */}
         <View style={styles.section}>

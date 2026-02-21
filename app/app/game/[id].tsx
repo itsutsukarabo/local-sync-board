@@ -28,6 +28,7 @@ import Toast from "../../components/common/Toast";
 import { useToast } from "../../hooks/useToast";
 import { leaveSeat, updateCounter } from "../../lib/roomApi";
 import { RecentLogEntry } from "../../types";
+import { isHostUser } from "../../utils/roomUtils";
 
 export default function GameScreen() {
   const router = useRouter();
@@ -41,7 +42,7 @@ export default function GameScreen() {
     room?.template?.forceLeaveTimeoutSec,
   );
 
-  const isHost = user?.id === room?.host_user_id;
+  const isHost = isHostUser(user?.id, room);
   const { toasts, show: showToast, dismiss: dismissToast } = useToast();
 
   const {
@@ -275,6 +276,7 @@ export default function GameScreen() {
               variables={room.template.variables}
               currentUserId={user?.id || ""}
               hostUserId={room.host_user_id}
+              coHostIds={room.co_host_ids}
               seats={room.seats || [null, null, null, null]}
               onTransfer={handleTransfer}
               onJoinSeat={handleJoinSeat}

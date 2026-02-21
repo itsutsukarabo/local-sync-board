@@ -2,7 +2,7 @@
  * ルーム関連のユーティリティ関数
  */
 
-import { GameTemplate, PotAction } from "../types";
+import { GameTemplate, PotAction, Room } from "../types";
 
 /**
  * 4文字のランダムなルームコードを生成（英数字大文字）
@@ -125,6 +125,20 @@ export const PERMISSION_LABELS: Record<string, string> = {
   reset_scores: "スコアリセット",
   edit_template: "テンプレート編集",
 };
+
+/**
+ * ユーザーがホスト（作成者またはコホスト）かどうかを判定
+ */
+export function isHostUser(
+  userId: string | null | undefined,
+  room: Room | null | undefined
+): boolean {
+  if (!userId || !room) return false;
+  return (
+    userId === room.host_user_id ||
+    (room.co_host_ids ?? []).includes(userId)
+  );
+}
 
 /**
  * 旧形式のPotAction（variable/amount）を新形式（transfers）に変換

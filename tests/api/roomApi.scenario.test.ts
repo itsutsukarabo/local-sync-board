@@ -42,6 +42,7 @@ import {
   joinFakeSeat,
   reseatFakePlayer,
   removeFakePlayer,
+  updateCoHosts,
 } from "../../app/lib/roomApi";
 import type { GameTemplate } from "../../app/types";
 
@@ -312,6 +313,52 @@ describe("roomApi シナリオテスト: 架空プレイヤー追加・移動・
     expect(dbAfterRemove!.current_state[fakeId]).toBeUndefined();
   });
 
+  it("updateCoHosts: コホスト追加・更新・削除", async () => {
+    // ======== 1. ホストがルームを作成 ========
+    setClient(host.client);
+    const { room, error: createError } = await createRoom(TEST_TEMPLATE);
+
+    expect(createError).toBeNull();
+    const roomId = room.id;
+    roomIdForCleanup = roomId;
+
+    // 初期状態では co_host_ids が空
+    const dbInitial = await getRoom(roomId);
+    expect(dbInitial!.co_host_ids).toEqual([]);
+
+    // ======== 2. 架空ユーザーIDをコホストに設定 ========
+    const fakeCoHostId = "fake_cohost_test";
+    setClient(host.client);
+    const { error: addError } = await updateCoHosts(roomId, [fakeCoHostId]);
+
+    expect(addError).toBeNull();
+
+    const dbAfterAdd = await getRoom(roomId);
+    expect(dbAfterAdd!.co_host_ids).toContain(fakeCoHostId);
+    expect(dbAfterAdd!.co_host_ids).toHaveLength(1);
+
+    // ======== 3. 別ユーザーも追加 ========
+    const fakeCoHostId2 = "fake_cohost_test_2";
+    setClient(host.client);
+    const { error: addError2 } = await updateCoHosts(roomId, [fakeCoHostId, fakeCoHostId2]);
+
+    expect(addError2).toBeNull();
+
+    const dbAfterAdd2 = await getRoom(roomId);
+    expect(dbAfterAdd2!.co_host_ids).toContain(fakeCoHostId);
+    expect(dbAfterAdd2!.co_host_ids).toContain(fakeCoHostId2);
+    expect(dbAfterAdd2!.co_host_ids).toHaveLength(2);
+
+    // ======== 4. コホストを全削除（空配列） ========
+    setClient(host.client);
+    const { error: clearError } = await updateCoHosts(roomId, []);
+
+    expect(clearError).toBeNull();
+
+    const dbAfterClear = await getRoom(roomId);
+    expect(dbAfterClear!.co_host_ids).toEqual([]);
+  });
+
   it("離席中ゲストがいる状態で新規ゲストを追加すると displayName が衝突しない", async () => {
     // ======== 1. ホストがルームを作成 ========
     setClient(host.client);
@@ -352,5 +399,96 @@ describe("roomApi シナリオテスト: 架空プレイヤー追加・移動・
     // 離席中の "プレイヤーA" と衝突せず、"プレイヤーB" が割り当てられる
     expect(newSeat.displayName).toBe("プレイヤーB");
     expect(newSeat.displayName).not.toBe("プレイヤーA");
+  });
+});
+
+// ---- コホスト権限 シナリオ ----
+
+describe("roomApi シナリオテスト: コホスト権限", () => {
+  let admin: SupabaseClient;
+  let host: AnonUser;
+  let coHost: AnonUser;
+  let roomIdForCleanup: string | null = null;
+
+  beforeEach(async () => {
+    admin = createServiceClient();
+    host = await createAnonUser();
+    coHost = await createAnonUser();
+  });
+
+  afterEach(async () => {
+    if (roomIdForCleanup) {
+      await admin.from("rooms").delete().eq("id", roomIdForCleanup);
+      roomIdForCleanup = null;
+    }
+    await cleanupAnonUser(admin, coHost.userId);
+    await cleanupAnonUser(admin, host.userId);
+  });
+
+  /** service_role でルーム最新状態を取得 */
+  async function getRoom(roomId: string) {
+    const { data } = await admin
+      .from("rooms")
+      .select("*")
+      .eq("id", roomId)
+      .single();
+    return data;
+  }
+
+  it("コホストが joinFakeSeat を呼び出せる（エラーにならない）", async () => {
+    // ======== 1. ホストがルームを作成 ========
+    setClient(host.client);
+    const { room, error: createError } = await createRoom(TEST_TEMPLATE);
+
+    expect(createError).toBeNull();
+    const roomId = room.id;
+    roomIdForCleanup = roomId;
+
+    // ======== 2. コホストをルームコードで入室 ========
+    setClient(coHost.client);
+    const { error: joinError } = await joinRoom(room.room_code);
+    expect(joinError).toBeNull();
+
+    // ======== 3. ホストがコホストを設定 ========
+    setClient(host.client);
+    const { error: coHostError } = await updateCoHosts(roomId, [coHost.userId]);
+    expect(coHostError).toBeNull();
+
+    const dbAfterCoHost = await getRoom(roomId);
+    expect(dbAfterCoHost!.co_host_ids).toContain(coHost.userId);
+
+    // ======== 4. コホストが架空ユーザーを席 0 に追加できる ========
+    setClient(coHost.client);
+    const { error: fakeError } = await joinFakeSeat(roomId, 0);
+
+    expect(fakeError).toBeNull();
+
+    const dbAfterFake = await getRoom(roomId);
+    const seat0 = dbAfterFake!.seats[0];
+    expect(seat0).not.toBeNull();
+    expect(seat0.userId).toMatch(/^fake_/);
+    expect(seat0.isFake).toBe(true);
+  });
+
+  it("コホスト権限を持たない一般ユーザーは joinFakeSeat がエラーになる", async () => {
+    // ======== 1. ホストがルームを作成 ========
+    setClient(host.client);
+    const { room, error: createError } = await createRoom(TEST_TEMPLATE);
+
+    expect(createError).toBeNull();
+    const roomId = room.id;
+    roomIdForCleanup = roomId;
+
+    // ======== 2. 一般ユーザーがルームコードで入室（コホスト設定なし） ========
+    setClient(coHost.client);
+    const { error: joinError } = await joinRoom(room.room_code);
+    expect(joinError).toBeNull();
+
+    // ======== 3. コホスト権限なしで架空ユーザー作成を試みる → エラー ========
+    setClient(coHost.client);
+    const { error: fakeError } = await joinFakeSeat(roomId, 0);
+
+    expect(fakeError).not.toBeNull();
+    expect(fakeError!.message).toContain("ホストのみが架空ユーザーを作成できます");
   });
 });

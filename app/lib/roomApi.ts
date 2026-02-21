@@ -11,7 +11,7 @@ import {
   SeatInfo,
   Settlement,
 } from "../types";
-import { generateRoomCode } from "../utils/roomUtils";
+import { generateRoomCode, isHostUser } from "../utils/roomUtils";
 
 /** API呼び出しログ（roomApi経由の全操作を追跡） */
 const apiLog = (fn: string, params?: Record<string, unknown>) => {
@@ -905,8 +905,8 @@ export async function joinFakeSeat(
       throw new Error("ルームが見つかりません");
     }
 
-    // 3. ホスト確認
-    if (room.host_user_id !== user.id) {
+    // 3. ホスト確認（作成者またはコホスト）
+    if (!isHostUser(user.id, room as Room)) {
       throw new Error("ホストのみが架空ユーザーを作成できます");
     }
 
@@ -1154,6 +1154,24 @@ export async function updateCounter(
   if (error) return { error: new Error(error.message) };
   if (data?.error) return { error: new Error(data.error) };
   if (data?.conflict) return { error: null, conflictValue: data.current_value as number };
+  return { error: null };
+}
+
+/**
+ * コホスト（追加ホスト）リストを更新する（ルーム作成者のみ呼び出し可）
+ * @param roomId - ルームID
+ * @param coHostIds - コホストのユーザーID配列
+ */
+export async function updateCoHosts(
+  roomId: string,
+  coHostIds: string[]
+): Promise<{ error: Error | null }> {
+  apiLog("updateCoHosts", { roomId, count: coHostIds.length });
+  const { error } = await supabase
+    .from("rooms")
+    .update({ co_host_ids: coHostIds })
+    .eq("id", roomId);
+  if (error) return { error: new Error(error.message) };
   return { error: null };
 }
 

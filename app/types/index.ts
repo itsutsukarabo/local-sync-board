@@ -70,6 +70,7 @@ export interface Room {
   id: string;
   room_code: string;
   host_user_id: string;
+  co_host_ids: string[];
   status: "waiting" | "playing" | "finished";
   template: GameTemplate;
   current_state: GameState;
