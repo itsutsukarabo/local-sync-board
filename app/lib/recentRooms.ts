@@ -21,6 +21,17 @@ export async function saveRecentRoom(entry: RecentRoom): Promise<void> {
   await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
 }
 
+export async function updateRecentRoomName(
+  roomId: string,
+  roomName: string
+): Promise<void> {
+  const rooms = await loadRecentRooms();
+  const updated = rooms.map((r) =>
+    r.roomId === roomId ? { ...r, roomName } : r
+  );
+  await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+}
+
 export async function removeRecentRoom(roomId: string): Promise<void> {
   const rooms = await loadRecentRooms();
   const updated = rooms.filter((r) => r.roomId !== roomId);

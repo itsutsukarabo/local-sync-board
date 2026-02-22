@@ -69,6 +69,7 @@ export interface SeatInfo {
 export interface Room {
   id: string;
   room_code: string;
+  room_name: string | null;
   host_user_id: string;
   co_host_ids: string[];
   status: "waiting" | "playing" | "finished";
@@ -259,6 +260,7 @@ export interface RecentRoom {
   roomCode: string;
   joinedAt: number; // Date.now()
   templateName: string; // "麻雀" etc.
+  roomName?: string;
 }
 
 export interface ConnectionStatus {

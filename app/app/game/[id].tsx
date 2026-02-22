@@ -211,6 +211,9 @@ export default function GameScreen() {
           </TouchableOpacity>
         </View>
         <View style={styles.headerCenter}>
+          {room.room_name ? (
+            <Text style={styles.roomNameText}>{room.room_name}</Text>
+          ) : null}
           <Text style={styles.roomCode}>ルーム: {room.room_code}</Text>
           <Text style={styles.playerCount}>{playerCount}人参加中</Text>
         </View>
@@ -437,8 +440,13 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: "#3b82f6",
   },
+  roomNameText: {
+    fontSize: 16,
+    fontWeight: "bold",
+    color: "#1f2937",
+  },
   roomCode: {
-    fontSize: 18,
+    fontSize: 13,
     fontWeight: "bold",
     color: "#1f2937",
   },

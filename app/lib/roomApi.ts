@@ -45,12 +45,14 @@ async function callRpc(
 /**
  * 新しいルームを作成
  * @param template - ゲームテンプレート
+ * @param roomName - ルーム名
  * @returns 作成されたルーム情報
  */
 export async function createRoom(
-  template: GameTemplate
+  template: GameTemplate,
+  roomName: string
 ): Promise<{ room: Room; error: Error | null }> {
-  apiLog("createRoom", { layout: template.layoutMode });
+  apiLog("createRoom", { layout: template.layoutMode, roomName });
   try {
     // 現在のユーザーを取得
     const {
@@ -94,6 +96,7 @@ export async function createRoom(
       .from("rooms")
       .insert({
         room_code: roomCode,
+        room_name: roomName,
         host_user_id: user.id,
         status: "waiting",
         template: template,
@@ -1170,6 +1173,24 @@ export async function updateCoHosts(
   const { error } = await supabase
     .from("rooms")
     .update({ co_host_ids: coHostIds })
+    .eq("id", roomId);
+  if (error) return { error: new Error(error.message) };
+  return { error: null };
+}
+
+/**
+ * ルーム名を更新
+ * @param roomId - ルームID
+ * @param roomName - 新しいルーム名
+ */
+export async function updateRoomName(
+  roomId: string,
+  roomName: string
+): Promise<{ error: Error | null }> {
+  apiLog("updateRoomName", { roomId, roomName });
+  const { error } = await supabase
+    .from("rooms")
+    .update({ room_name: roomName })
     .eq("id", roomId);
   if (error) return { error: new Error(error.message) };
   return { error: null };

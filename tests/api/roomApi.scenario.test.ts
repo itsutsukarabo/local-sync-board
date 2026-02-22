@@ -43,6 +43,7 @@ import {
   reseatFakePlayer,
   removeFakePlayer,
   updateCoHosts,
+  updateRoomName,
 } from "../../app/lib/roomApi";
 import type { GameTemplate } from "../../app/types";
 
@@ -109,7 +110,7 @@ describe("roomApi シナリオテスト: 入室〜退室〜削除", () => {
   it("ホスト作成→着席→ゲスト入室→着席→離席→退室→ホスト削除", async () => {
     // ======== 1. ホストがルームを作成 ========
     setClient(host.client);
-    const { room, error: createError } = await createRoom(TEST_TEMPLATE);
+    const { room, error: createError } = await createRoom(TEST_TEMPLATE, "テストルーム");
 
     expect(createError).toBeNull();
     expect(room).toBeDefined();
@@ -236,7 +237,7 @@ describe("roomApi シナリオテスト: 架空プレイヤー追加・移動・
   it("架空プレイヤー追加→席移動→削除", async () => {
     // ======== 1. ホストがルームを作成 ========
     setClient(host.client);
-    const { room, error: createError } = await createRoom(TEST_TEMPLATE);
+    const { room, error: createError } = await createRoom(TEST_TEMPLATE, "テストルーム");
 
     expect(createError).toBeNull();
     const roomId = room.id;
@@ -316,7 +317,7 @@ describe("roomApi シナリオテスト: 架空プレイヤー追加・移動・
   it("updateCoHosts: コホスト追加・更新・削除", async () => {
     // ======== 1. ホストがルームを作成 ========
     setClient(host.client);
-    const { room, error: createError } = await createRoom(TEST_TEMPLATE);
+    const { room, error: createError } = await createRoom(TEST_TEMPLATE, "テストルーム");
 
     expect(createError).toBeNull();
     const roomId = room.id;
@@ -362,7 +363,7 @@ describe("roomApi シナリオテスト: 架空プレイヤー追加・移動・
   it("離席中ゲストがいる状態で新規ゲストを追加すると displayName が衝突しない", async () => {
     // ======== 1. ホストがルームを作成 ========
     setClient(host.client);
-    const { room, error: createError } = await createRoom(TEST_TEMPLATE);
+    const { room, error: createError } = await createRoom(TEST_TEMPLATE, "テストルーム");
 
     expect(createError).toBeNull();
     const roomId = room.id;
@@ -438,7 +439,7 @@ describe("roomApi シナリオテスト: コホスト権限", () => {
   it("コホストが joinFakeSeat を呼び出せる（エラーにならない）", async () => {
     // ======== 1. ホストがルームを作成 ========
     setClient(host.client);
-    const { room, error: createError } = await createRoom(TEST_TEMPLATE);
+    const { room, error: createError } = await createRoom(TEST_TEMPLATE, "テストルーム");
 
     expect(createError).toBeNull();
     const roomId = room.id;
@@ -473,7 +474,7 @@ describe("roomApi シナリオテスト: コホスト権限", () => {
   it("コホスト権限を持たない一般ユーザーは joinFakeSeat がエラーになる", async () => {
     // ======== 1. ホストがルームを作成 ========
     setClient(host.client);
-    const { room, error: createError } = await createRoom(TEST_TEMPLATE);
+    const { room, error: createError } = await createRoom(TEST_TEMPLATE, "テストルーム");
 
     expect(createError).toBeNull();
     const roomId = room.id;
@@ -490,5 +491,116 @@ describe("roomApi シナリオテスト: コホスト権限", () => {
 
     expect(fakeError).not.toBeNull();
     expect(fakeError!.message).toContain("ホストのみが架空ユーザーを作成できます");
+  });
+});
+
+// ---- ルーム名 シナリオ ----
+
+describe("roomApi シナリオテスト: ルーム名", () => {
+  let admin: SupabaseClient;
+  let host: AnonUser;
+  let guest: AnonUser;
+  let roomIdForCleanup: string | null = null;
+
+  beforeEach(async () => {
+    admin = createServiceClient();
+    host = await createAnonUser();
+    guest = await createAnonUser();
+  });
+
+  afterEach(async () => {
+    if (roomIdForCleanup) {
+      await admin.from("rooms").delete().eq("id", roomIdForCleanup);
+      roomIdForCleanup = null;
+    }
+    await cleanupAnonUser(admin, guest.userId);
+    await cleanupAnonUser(admin, host.userId);
+  });
+
+  it("createRoom で指定したルーム名が DB に保存される", async () => {
+    setClient(host.client);
+    const { room, error } = await createRoom(TEST_TEMPLATE, "今日の麻雀");
+
+    expect(error).toBeNull();
+    expect(room.room_name).toBe("今日の麻雀");
+    roomIdForCleanup = room.id;
+  });
+
+  it("updateRoomName でルーム名を変更できる", async () => {
+    // ======== 1. ルームを作成 ========
+    setClient(host.client);
+    const { room, error: createError } = await createRoom(TEST_TEMPLATE, "初期名前");
+
+    expect(createError).toBeNull();
+    const roomId = room.id;
+    roomIdForCleanup = roomId;
+
+    // ======== 2. ルーム名を更新 ========
+    setClient(host.client);
+    const { error: updateError } = await updateRoomName(roomId, "新しい名前");
+
+    expect(updateError).toBeNull();
+
+    // DB の値を確認
+    const { data: updated } = await admin
+      .from("rooms")
+      .select("room_name")
+      .eq("id", roomId)
+      .single();
+
+    expect(updated!.room_name).toBe("新しい名前");
+  });
+
+  it("updateRoomName でルーム名を空文字にできる", async () => {
+    setClient(host.client);
+    const { room, error: createError } = await createRoom(TEST_TEMPLATE, "名前あり");
+
+    expect(createError).toBeNull();
+    const roomId = room.id;
+    roomIdForCleanup = roomId;
+
+    setClient(host.client);
+    const { error: updateError } = await updateRoomName(roomId, "");
+
+    expect(updateError).toBeNull();
+
+    const { data: updated } = await admin
+      .from("rooms")
+      .select("room_name")
+      .eq("id", roomId)
+      .single();
+
+    expect(updated!.room_name).toBe("");
+  });
+
+  it("ゲストは updateRoomName でホストのルーム名を変更できない", async () => {
+    // ======== 1. ホストがルームを作成 ========
+    setClient(host.client);
+    const { room, error: createError } = await createRoom(TEST_TEMPLATE, "ホストの部屋");
+
+    expect(createError).toBeNull();
+    const roomId = room.id;
+    roomIdForCleanup = roomId;
+
+    // ======== 2. ゲストが入室 ========
+    setClient(guest.client);
+    const { error: joinError } = await joinRoom(room.room_code);
+    expect(joinError).toBeNull();
+
+    // ======== 3. ゲストが room_name を書き換えようとする ========
+    setClient(guest.client);
+    const { error: updateError } = await updateRoomName(roomId, "乗っ取り");
+
+    // RLS によりエラーは発生しないが、DB の値は変わらない
+    // (Supabase の update は RLS 違反時に 0 件更新で正常終了するケースがある)
+    if (!updateError) {
+      const { data: check } = await admin
+        .from("rooms")
+        .select("room_name")
+        .eq("id", roomId)
+        .single();
+
+      expect(check!.room_name).toBe("ホストの部屋");
+    }
   });
 });

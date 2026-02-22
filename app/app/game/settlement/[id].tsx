@@ -193,7 +193,7 @@ export default function SettlementScreen() {
         <TouchableOpacity onPress={() => router.back()}>
           <Text style={styles.backButton}>← 戻る</Text>
         </TouchableOpacity>
-        <Text style={styles.title}>ゲーム結果</Text>
+        <Text style={styles.title}>{room?.room_name ?? "ゲーム結果"}</Text>
         <View style={styles.headerRight} />
       </View>
 

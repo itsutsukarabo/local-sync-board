@@ -7,6 +7,7 @@ import {
   ActivityIndicator,
   Alert,
   ScrollView,
+  TextInput,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -23,8 +24,14 @@ export default function CreateRoomScreen() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<string>("mahjong");
+  const [roomName, setRoomName] = useState<string>("");
 
   const handleCreateRoom = async () => {
+    if (!roomName.trim()) {
+      Alert.alert("エラー", "ルーム名を入力してください");
+      return;
+    }
+
     try {
       setLoading(true);
 
@@ -38,7 +45,7 @@ export default function CreateRoomScreen() {
       }
 
       // ルームを作成
-      const { room, error } = await createRoom(template);
+      const { room, error } = await createRoom(template, roomName.trim());
 
       if (error) {
         Alert.alert("エラー", error.message);
@@ -55,6 +62,7 @@ export default function CreateRoomScreen() {
         roomCode: room.room_code,
         joinedAt: Date.now(),
         templateName: TEMPLATE_LABELS[selectedTemplate] || selectedTemplate,
+        roomName: roomName.trim(),
       });
 
       // ゲーム画面に遷移
@@ -75,6 +83,19 @@ export default function CreateRoomScreen() {
           <Text style={styles.subtitle}>
             ゲームテンプレートを選択してルームを作成します
           </Text>
+
+          {/* ルーム名入力 */}
+          <View style={styles.roomNameSection}>
+            <Text style={styles.sectionTitle}>ルーム名</Text>
+            <TextInput
+              style={styles.roomNameInput}
+              value={roomName}
+              onChangeText={setRoomName}
+              placeholder="ルーム名を入力してください"
+              maxLength={30}
+              editable={!loading}
+            />
+          </View>
 
           {/* テンプレート選択 */}
           <View style={styles.templateSection}>
@@ -136,10 +157,10 @@ export default function CreateRoomScreen() {
           <TouchableOpacity
             style={[
               styles.createButton,
-              loading && styles.createButtonDisabled,
+              (loading || !roomName.trim()) && styles.createButtonDisabled,
             ]}
             onPress={handleCreateRoom}
-            disabled={loading}
+            disabled={loading || !roomName.trim()}
           >
             {loading ? (
               <ActivityIndicator color="#ffffff" />
@@ -185,6 +206,20 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: "#6b7280",
     marginBottom: 24,
+  },
+  roomNameSection: {
+    marginBottom: 24,
+  },
+  roomNameInput: {
+    borderWidth: 1,
+    borderColor: "#d1d5db",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 15,
+    color: "#1f2937",
+    backgroundColor: "#ffffff",
+    marginTop: 8,
   },
   templateSection: {
     marginBottom: 24,

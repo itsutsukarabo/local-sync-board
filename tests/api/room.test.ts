@@ -437,3 +437,126 @@ describe("deleteRoom: ルーム削除（RLS 適用下）", () => {
     expect(check).toHaveLength(1);
   });
 });
+
+// ================================================================
+// room_name: ルーム名の設定・更新（RLS 適用下）
+// ================================================================
+describe("room_name: ルーム名の設定・更新（RLS 適用下）", () => {
+  it("ルーム作成時に room_name を設定すると DB に保存される", async () => {
+    const host = await anonUser();
+
+    const { data, error } = await host.client
+      .from("rooms")
+      .insert({
+        room_code: genCode(),
+        room_name: "今日の麻雀",
+        host_user_id: host.userId,
+        status: "waiting",
+        template: DEFAULT_TEMPLATE,
+        current_state: {},
+        seats: [null, null, null, null],
+      })
+      .select()
+      .single();
+
+    expect(error).toBeNull();
+    expect(data!.room_name).toBe("今日の麻雀");
+    roomIds.push(data!.id);
+  });
+
+  it("room_name を省略してもルームを作成できる（NULL 許容）", async () => {
+    const host = await anonUser();
+
+    const { data, error } = await host.client
+      .from("rooms")
+      .insert({
+        room_code: genCode(),
+        host_user_id: host.userId,
+        status: "waiting",
+        template: DEFAULT_TEMPLATE,
+        current_state: {},
+        seats: [null, null, null, null],
+      })
+      .select()
+      .single();
+
+    expect(error).toBeNull();
+    expect(data!.room_name).toBeNull();
+    roomIds.push(data!.id);
+  });
+
+  it("ホストは自分のルームの room_name を更新できる", async () => {
+    const host = await anonUser();
+
+    const { data: room } = await host.client
+      .from("rooms")
+      .insert({
+        room_code: genCode(),
+        room_name: "旧名前",
+        host_user_id: host.userId,
+        status: "waiting",
+        template: DEFAULT_TEMPLATE,
+        current_state: {},
+        seats: [null, null, null, null],
+      })
+      .select("id")
+      .single();
+
+    roomIds.push(room!.id);
+
+    const { error } = await host.client
+      .from("rooms")
+      .update({ room_name: "新名前" })
+      .eq("id", room!.id);
+
+    expect(error).toBeNull();
+
+    const { data: updated } = await admin
+      .from("rooms")
+      .select("room_name")
+      .eq("id", room!.id)
+      .single();
+
+    expect(updated!.room_name).toBe("新名前");
+  });
+
+  it("RLS: ゲストは他人のルームの room_name を更新できない", async () => {
+    const host = await anonUser();
+    const guest = await anonUser();
+
+    const { data: room } = await host.client
+      .from("rooms")
+      .insert({
+        room_code: genCode(),
+        room_name: "ホストの部屋",
+        host_user_id: host.userId,
+        status: "waiting",
+        template: DEFAULT_TEMPLATE,
+        current_state: {},
+        seats: [null, null, null, null],
+      })
+      .select("id")
+      .single();
+
+    roomIds.push(room!.id);
+
+    // ゲストが room_name を書き換えようとする
+    const { data: result } = await guest.client
+      .from("rooms")
+      .update({ room_name: "乗っ取り" })
+      .eq("id", room!.id)
+      .select();
+
+    // RLS により対象行が見つからず、更新0件
+    expect(result).toHaveLength(0);
+
+    // DB の値は変わっていない
+    const { data: check } = await admin
+      .from("rooms")
+      .select("room_name")
+      .eq("id", room!.id)
+      .single();
+
+    expect(check!.room_name).toBe("ホストの部屋");
+  });
+});

@@ -51,6 +51,9 @@ export default function RecentRooms({
               <Text style={styles.codeText}>{room.roomCode}</Text>
             </View>
             <View style={styles.info}>
+              {room.roomName ? (
+                <Text style={styles.roomNameText}>{room.roomName}</Text>
+              ) : null}
               <Text style={styles.templateName}>{room.templateName}</Text>
               <Text style={styles.time}>
                 {formatRelativeTime(room.joinedAt)}
@@ -109,10 +112,14 @@ const styles = StyleSheet.create({
   info: {
     flex: 1,
   },
-  templateName: {
+  roomNameText: {
     fontSize: 15,
     fontWeight: "600",
     color: "#1f2937",
+  },
+  templateName: {
+    fontSize: 13,
+    color: "#6b7280",
   },
   time: {
     fontSize: 12,

@@ -18,7 +18,8 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useRoomRealtime } from "../../../hooks/useRoomRealtime";
 import { useAuth } from "../../../hooks/useAuth";
-import { updateTemplate } from "../../../lib/roomApi";
+import { updateTemplate, updateRoomName } from "../../../lib/roomApi";
+import { updateRecentRoomName } from "../../../lib/recentRooms";
 import { Variable, PotAction, SettlementConfig } from "../../../types";
 import { isHostUser } from "../../../utils/roomUtils";
 import { DEFAULT_FORCE_LEAVE_TIMEOUT_SEC } from "../../../constants/connection";
@@ -51,7 +52,12 @@ export default function RoomSettingsScreen() {
       <SafeAreaView style={styles.container}>
         <View style={styles.centerContent}>
           <Text style={styles.errorText}>ルームが見つかりません</Text>
-          <TouchableOpacity style={styles.backBtn} onPress={() => router.canGoBack() ? router.back() : router.replace("/")}>
+          <TouchableOpacity
+            style={styles.backBtn}
+            onPress={() =>
+              router.canGoBack() ? router.back() : router.replace("/")
+            }
+          >
             <Text style={styles.backBtnText}>戻る</Text>
           </TouchableOpacity>
         </View>
@@ -69,7 +75,10 @@ export default function RoomSettingsScreen() {
           <Text style={styles.errorText}>
             この画面はホストのみアクセスできます
           </Text>
-          <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+          <TouchableOpacity
+            style={styles.backBtn}
+            onPress={() => router.back()}
+          >
             <Text style={styles.backBtnText}>戻る</Text>
           </TouchableOpacity>
         </View>
@@ -77,9 +86,7 @@ export default function RoomSettingsScreen() {
     );
   }
 
-  return (
-    <SettingsContent room={room} user={user} router={router} />
-  );
+  return <SettingsContent room={room} user={user} router={router} />;
 }
 
 /**
@@ -94,31 +101,39 @@ function SettingsContent({
   user: any;
   router: any;
 }) {
+  const [editRoomName, setEditRoomName] = useState<string>(
+    room.room_name ?? "",
+  );
   const [editVariables, setEditVariables] = useState<Variable[]>(
-    room.template.variables
+    room.template.variables,
   );
   const [editPotActions, setEditPotActions] = useState<PotAction[]>(
-    room.template.potActions || []
+    room.template.potActions || [],
   );
-  const [editSettlementConfig, setEditSettlementConfig] = useState<SettlementConfig | undefined>(
-    room.template.settlementConfig
-  );
+  const [editSettlementConfig, setEditSettlementConfig] = useState<
+    SettlementConfig | undefined
+  >(room.template.settlementConfig);
   const [editForceLeaveTimeout, setEditForceLeaveTimeout] = useState<string>(
-    String(room.template.forceLeaveTimeoutSec ?? DEFAULT_FORCE_LEAVE_TIMEOUT_SEC)
+    String(
+      room.template.forceLeaveTimeoutSec ?? DEFAULT_FORCE_LEAVE_TIMEOUT_SEC,
+    ),
   );
   const [saving, setSaving] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
 
   // ルームデータが更新されたらローカルstateを同期
   useEffect(() => {
+    setEditRoomName(room.room_name ?? "");
     setEditVariables(room.template.variables);
     setEditPotActions(room.template.potActions || []);
     setEditSettlementConfig(room.template.settlementConfig);
     setEditForceLeaveTimeout(
-      String(room.template.forceLeaveTimeoutSec ?? DEFAULT_FORCE_LEAVE_TIMEOUT_SEC)
+      String(
+        room.template.forceLeaveTimeoutSec ?? DEFAULT_FORCE_LEAVE_TIMEOUT_SEC,
+      ),
     );
     setHasChanges(false);
-  }, [room.template]);
+  }, [room.room_name, room.template]);
 
   const handleVariablesUpdate = useCallback((variables: Variable[]) => {
     setEditVariables(variables);
@@ -130,10 +145,13 @@ function SettingsContent({
     setHasChanges(true);
   }, []);
 
-  const handleSettlementConfigUpdate = useCallback((config: SettlementConfig) => {
-    setEditSettlementConfig(config);
-    setHasChanges(true);
-  }, []);
+  const handleSettlementConfigUpdate = useCallback(
+    (config: SettlementConfig) => {
+      setEditSettlementConfig(config);
+      setHasChanges(true);
+    },
+    [],
+  );
 
   const handleSave = async () => {
     const parsedTimeout = parseInt(editForceLeaveTimeout, 10);
@@ -143,17 +161,32 @@ function SettingsContent({
     }
     setSaving(true);
     try {
+      const trimmedRoomName = editRoomName.trim();
+      if (trimmedRoomName !== (room.room_name ?? "")) {
+        const { error: nameError } = await updateRoomName(
+          room.id,
+          trimmedRoomName,
+        );
+        if (nameError) {
+          Alert.alert("エラー", nameError.message);
+          setSaving(false);
+          return;
+        }
+        await updateRecentRoomName(room.id, trimmedRoomName);
+      }
       const { error } = await updateTemplate(room.id, {
         variables: editVariables,
         potActions: editPotActions,
-        ...(editSettlementConfig ? { settlementConfig: editSettlementConfig } : {}),
+        ...(editSettlementConfig
+          ? { settlementConfig: editSettlementConfig }
+          : {}),
         forceLeaveTimeoutSec: parsedTimeout,
       });
       if (error) {
         Alert.alert("エラー", error.message);
       } else {
         setHasChanges(false);
-        Alert.alert("保存完了", "テンプレートを更新しました。");
+        Alert.alert("保存完了", "設定を更新しました。");
       }
     } finally {
       setSaving(false);
@@ -162,28 +195,41 @@ function SettingsContent({
 
   // プレイヤー一覧を取得
   const players = Object.keys(room.current_state || {}).filter(
-    (key) => !key.startsWith("__")
+    (key) => !key.startsWith("__"),
   );
 
   return (
     <SafeAreaView style={styles.container}>
       {/* ヘッダー */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => {
-          if (hasChanges) {
-            Alert.alert("確認", "変更が保存されていません。保存せずに戻りますか？", [
-              { text: "キャンセル", style: "cancel" },
-              { text: "保存せず戻る", style: "destructive", onPress: () => router.back() },
-            ]);
-          } else {
-            router.back();
-          }
-        }}>
+        <TouchableOpacity
+          onPress={() => {
+            if (hasChanges) {
+              Alert.alert(
+                "確認",
+                "変更が保存されていません。保存せずに戻りますか？",
+                [
+                  { text: "キャンセル", style: "cancel" },
+                  {
+                    text: "保存せず戻る",
+                    style: "destructive",
+                    onPress: () => router.back(),
+                  },
+                ],
+              );
+            } else {
+              router.back();
+            }
+          }}
+        >
           <Text style={styles.headerBack}>← 戻る</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>ルーム設定</Text>
         <TouchableOpacity
-          style={[styles.saveBtn, (!hasChanges || saving) && styles.saveBtnDisabled]}
+          style={[
+            styles.saveBtn,
+            (!hasChanges || saving) && styles.saveBtnDisabled,
+          ]}
           onPress={handleSave}
           disabled={!hasChanges || saving}
         >
@@ -197,6 +243,24 @@ function SettingsContent({
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
       >
+        {/* ルーム名セクション */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>ルーム名</Text>
+          <Text style={styles.sectionDescription}>
+            ゲーム画面などに表示される部屋の名前です
+          </Text>
+          <TextInput
+            style={styles.roomNameInput}
+            value={editRoomName}
+            onChangeText={(text) => {
+              setEditRoomName(text);
+              setHasChanges(true);
+            }}
+            placeholder="ルーム名を入力してください"
+            maxLength={30}
+          />
+        </View>
+
         {/* 変数設定セクション */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>変数設定</Text>
@@ -235,7 +299,9 @@ function SettingsContent({
             <SettlementConfigEditor
               config={editSettlementConfig}
               onUpdate={handleSettlementConfigUpdate}
-              scoreInitial={editVariables.find((v) => v.key === "score")?.initial ?? 0}
+              scoreInitial={
+                editVariables.find((v) => v.key === "score")?.initial ?? 0
+              }
             />
           </View>
         )}
@@ -474,5 +540,15 @@ const styles = StyleSheet.create({
     color: "#9ca3af",
     marginTop: 4,
     textAlign: "right",
+  },
+  roomNameInput: {
+    borderWidth: 1,
+    borderColor: "#d1d5db",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 15,
+    color: "#1f2937",
+    backgroundColor: "#ffffff",
   },
 });
