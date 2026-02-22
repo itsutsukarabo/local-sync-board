@@ -13,6 +13,7 @@ import {
   Alert,
 } from "react-native";
 import { Variable, PotAction } from "../../types";
+import { parseQuickAmounts } from "../../utils/paymentUtils";
 
 interface VariableEditorProps {
   variables: Variable[];
@@ -38,6 +39,7 @@ export default function VariableEditor({
 
   // 初期値の入力中テキストを管理（"-" や空欄など中間状態を許容）
   const [initialTexts, setInitialTexts] = useState<{ [key: string]: string }>({});
+  const [quickAmountsTexts, setQuickAmountsTexts] = useState<{ [key: string]: string }>({});
 
   const handleInitialChange = (index: number, text: string) => {
     const key = variables[index].key;
@@ -63,6 +65,24 @@ export default function VariableEditor({
     if (!isNaN(num) && num === variable.initial) return text;
     if (text === "-" || text === "") return text;
     return String(variable.initial);
+  };
+
+  const handleQuickAmountsChange = (index: number, text: string) => {
+    const key = variables[index].key;
+    setQuickAmountsTexts((prev) => ({ ...prev, [key]: text }));
+
+    const updated = [...variables];
+    updated[index] = {
+      ...updated[index],
+      quickAmounts: parseQuickAmounts(text),
+    };
+    onUpdate(updated);
+  };
+
+  const getQuickAmountsText = (variable: Variable): string => {
+    const text = quickAmountsTexts[variable.key];
+    if (text !== undefined) return text;
+    return variable.quickAmounts ? variable.quickAmounts.join(", ") : "";
   };
 
   const handleDelete = (index: number) => {
@@ -164,6 +184,19 @@ export default function VariableEditor({
                 onChangeText={(text) => handleInitialChange(index, text)}
                 keyboardType="numbers-and-punctuation"
                 placeholder="0"
+              />
+            </View>
+          </View>
+          <View style={styles.inputRow}>
+            <View style={[styles.inputGroup, { flex: 2 }]}>
+              <Text style={styles.inputLabel}>クイック入力（カンマ区切り）</Text>
+              <TextInput
+                style={styles.textInput}
+                value={getQuickAmountsText(variable)}
+                onChangeText={(text) => handleQuickAmountsChange(index, text)}
+                keyboardType="numbers-and-punctuation"
+                placeholder="例: 10000, 1000, 100"
+                placeholderTextColor="#9ca3af"
               />
             </View>
           </View>

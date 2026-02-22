@@ -9,6 +9,7 @@ import {
   ScrollView,
 } from "react-native";
 import { Variable } from "../../types";
+import { getSteps } from "../../utils/paymentUtils";
 
 interface PaymentModalProps {
   visible: boolean;
@@ -20,10 +21,6 @@ interface PaymentModalProps {
   isProcessing?: boolean;
 }
 
-function getSteps(key: string): number[] {
-  if (key === "score") return [10000, 1000, 100];
-  return [10, 1];
-}
 
 export default function PaymentModal({
   visible,
@@ -110,7 +107,7 @@ export default function PaymentModal({
 
                 {/* スプリットボタン（横一列） */}
                 <View style={styles.splitRow}>
-                  {getSteps(variable.key).map((step) => (
+                  {getSteps(variable).map((step) => (
                     <View key={step} style={styles.splitButton}>
                       {/* 左半分: 青 / 減算 */}
                       <TouchableOpacity
