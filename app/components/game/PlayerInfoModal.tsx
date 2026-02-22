@@ -25,6 +25,7 @@ interface PlayerInfoModalProps {
   isFakePlayer: boolean;
   isHost: boolean;
   onForceLeave?: () => void;
+  onRenameGuest?: () => void;
 }
 
 export default function PlayerInfoModal({
@@ -37,6 +38,7 @@ export default function PlayerInfoModal({
   isFakePlayer,
   isHost,
   onForceLeave,
+  onRenameGuest,
 }: PlayerInfoModalProps) {
   if (!visible) return null;
 
@@ -95,16 +97,26 @@ export default function PlayerInfoModal({
             })}
 
             {/* ホスト操作ボタン */}
-            {isHost && onForceLeave && (
+            {isHost && (onForceLeave || (isFakePlayer && onRenameGuest)) && (
               <View style={styles.actionSection}>
-                <TouchableOpacity
-                  style={styles.forceLeaveButton}
-                  onPress={handleForceLeave}
-                >
-                  <Text style={styles.forceLeaveButtonText}>
-                    🚪 離席させる
-                  </Text>
-                </TouchableOpacity>
+                {isFakePlayer && onRenameGuest && (
+                  <TouchableOpacity
+                    style={styles.renameButton}
+                    onPress={onRenameGuest}
+                  >
+                    <Text style={styles.renameButtonText}>✏️ 名前を変更する</Text>
+                  </TouchableOpacity>
+                )}
+                {onForceLeave && (
+                  <TouchableOpacity
+                    style={styles.forceLeaveButton}
+                    onPress={handleForceLeave}
+                  >
+                    <Text style={styles.forceLeaveButtonText}>
+                      🚪 離席させる
+                    </Text>
+                  </TouchableOpacity>
+                )}
               </View>
             )}
           </ScrollView>
@@ -185,6 +197,18 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     borderTopWidth: 1,
     borderTopColor: "#e5e7eb",
+  },
+  renameButton: {
+    backgroundColor: "#2563eb",
+    padding: 14,
+    borderRadius: 8,
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  renameButtonText: {
+    color: "#ffffff",
+    fontSize: 15,
+    fontWeight: "600",
   },
   forceLeaveButton: {
     backgroundColor: "#ef4444",

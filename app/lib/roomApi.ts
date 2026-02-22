@@ -1136,6 +1136,68 @@ export async function reseatFakePlayer(
 }
 
 /**
+ * 架空ユーザーの表示名を変更（ホスト専用）
+ * seats[i].displayName と current_state[fakeUserId].__displayName__ を両方更新する
+ * @param roomId - ルームID
+ * @param fakeUserId - 架空ユーザーID（例: "fake_xxxxx"）
+ * @param newName - 新しい表示名
+ */
+export async function renameFakePlayer(
+  roomId: string,
+  fakeUserId: string,
+  newName: string
+): Promise<{ error: Error | null }> {
+  apiLog("renameFakePlayer", { roomId, fakeUserId, newName });
+  try {
+    const { data: room, error: fetchError } = await supabase
+      .from("rooms")
+      .select("seats, current_state")
+      .eq("id", roomId)
+      .single();
+
+    if (fetchError) {
+      throw fetchError;
+    }
+
+    if (!room) {
+      throw new Error("ルームが見つかりません");
+    }
+
+    // seats の displayName を更新
+    const seats: (SeatInfo | null)[] = room.seats || [null, null, null, null];
+    const seatIndex = seats.findIndex((seat) => seat && seat.userId === fakeUserId);
+    if (seatIndex !== -1) {
+      seats[seatIndex] = { ...seats[seatIndex]!, displayName: newName };
+    }
+
+    // current_state の __displayName__ を更新
+    const currentState = { ...room.current_state };
+    if (currentState[fakeUserId]) {
+      currentState[fakeUserId] = { ...currentState[fakeUserId], __displayName__: newName };
+    }
+
+    const { error: updateError } = await supabase
+      .from("rooms")
+      .update({ seats, current_state: currentState })
+      .eq("id", roomId);
+
+    if (updateError) {
+      throw updateError;
+    }
+
+    return { error: null };
+  } catch (error) {
+    console.error("Error renaming fake player:", error);
+    return {
+      error:
+        error instanceof Error
+          ? error
+          : new Error("名前の変更に失敗しました"),
+    };
+  }
+}
+
+/**
  * カウンター値を Compare-and-Swap で更新（DB側RPCで原子的に処理）
  * @param roomId - ルームID
  * @param expectedValue - 編集開始時点のサーバー値（CASのexpected）

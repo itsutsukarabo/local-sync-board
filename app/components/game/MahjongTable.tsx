@@ -21,6 +21,7 @@ import PlayerInfoModal from "./PlayerInfoModal";
 import EmptySeat from "./EmptySeat";
 import FluidArrow from "./FluidArrow";
 import CounterCard from "./CounterCard";
+import EditNameModal from "../home/EditNameModal";
 
 interface MahjongTableProps {
   gameState: GameState;
@@ -42,6 +43,7 @@ interface MahjongTableProps {
   counterValue?: number; // undefined = カウンター非表示
   canEditCounter?: boolean;
   onCounterCommit?: (expected: number, newVal: number) => Promise<{ conflictValue?: number }>;
+  onRenameGuest?: (fakeUserId: string, newName: string) => Promise<void>;
 }
 
 export default function MahjongTable({
@@ -64,6 +66,7 @@ export default function MahjongTable({
   counterValue,
   canEditCounter,
   onCounterCommit,
+  onRenameGuest,
 }: MahjongTableProps) {
   const containerRef = useRef<View>(null);
 
@@ -82,6 +85,11 @@ export default function MahjongTable({
     visible: boolean;
     playerId: string;
     seatIndex: number;
+  } | null>(null);
+
+  const [renameGuestTarget, setRenameGuestTarget] = useState<{
+    playerId: string;
+    currentName: string;
   } | null>(null);
 
   const pot = gameState.__pot__ || { score: 0 };
@@ -355,8 +363,31 @@ export default function MahjongTable({
                 }
               : undefined
           }
+          onRenameGuest={
+            isHost && infoModalSeat.isFake
+              ? () => {
+                  setRenameGuestTarget({
+                    playerId: playerInfoModal.playerId,
+                    currentName: infoModalSeat.displayName ?? "",
+                  });
+                  setPlayerInfoModal(null);
+                }
+              : undefined
+          }
         />
       )}
+
+      {/* ゲスト名前変更モーダル */}
+      <EditNameModal
+        visible={renameGuestTarget !== null}
+        currentName={renameGuestTarget?.currentName ?? ""}
+        onClose={() => setRenameGuestTarget(null)}
+        onSave={async (newName) => {
+          if (!renameGuestTarget) return;
+          await onRenameGuest?.(renameGuestTarget.playerId, newName);
+          setRenameGuestTarget(null);
+        }}
+      />
     </GestureHandlerRootView>
   );
 }

@@ -54,6 +54,7 @@ export default function GameScreen() {
     handleJoinFakeSeat,
     handleLeaveSeat,
     handleForceLeave,
+    handleRenameGuest,
     handleTransfer,
     handleRollback,
     handleUndo,
@@ -285,6 +286,7 @@ export default function GameScreen() {
               onJoinSeat={handleJoinSeat}
               onJoinFakeSeat={isHost ? handleJoinFakeSeat : undefined}
               onForceLeave={isHost ? handleForceLeave : undefined}
+              onRenameGuest={isHost ? handleRenameGuest : undefined}
               isPotEnabled={isPotEnabled}
               potActions={room.template.potActions || []}
               connectionStatuses={connectionStatuses}

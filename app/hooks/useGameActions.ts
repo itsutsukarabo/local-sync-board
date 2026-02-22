@@ -18,6 +18,7 @@ import {
   undoLast,
   saveSettlement,
   fetchSettlements,
+  renameFakePlayer,
 } from "../lib/roomApi";
 import { supabase } from "../lib/supabase";
 import {
@@ -45,6 +46,7 @@ export interface UseGameActionsResult {
   handleJoinFakeSeat: (seatIndex: number) => Promise<void>;
   handleLeaveSeat: () => void;
   handleForceLeave: (targetUserId: string) => Promise<void>;
+  handleRenameGuest: (fakeUserId: string, newName: string) => Promise<void>;
   handleTransfer: (
     fromId: string,
     toId: string,
@@ -209,6 +211,18 @@ export function useGameActions({
       } catch (error) {
         console.error("Error force leaving seat:", error);
         Alert.alert("エラー", "強制離席に失敗しました");
+      }
+    },
+    [room]
+  );
+
+  // ゲストプレイヤーの名前を変更するハンドラー（ホスト操作）
+  const handleRenameGuest = useCallback(
+    async (fakeUserId: string, newName: string) => {
+      if (!room) return;
+      const { error } = await renameFakePlayer(room.id, fakeUserId, newName);
+      if (error) {
+        Alert.alert("エラー", "名前の変更に失敗しました");
       }
     },
     [room]
@@ -429,6 +443,7 @@ export function useGameActions({
     handleJoinFakeSeat,
     handleLeaveSeat,
     handleForceLeave,
+    handleRenameGuest,
     handleTransfer,
     handleRollback,
     handleUndo,
