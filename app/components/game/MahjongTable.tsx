@@ -266,19 +266,26 @@ export default function MahjongTable({
         })}
 
         {/* 供託金エリア */}
-        {isPotEnabled && (
-          <PotArea
-            pot={pot}
-            variables={variables}
-            isHighlighted={drag.snapTargetIdState === "__pot__"}
-            onDragStart={handleDragStart}
-            onDragUpdate={drag.handleDragUpdate}
-            onDragEnd={drag.handleDragEnd}
-            onPositionMeasured={(x, y) => {
-              drag.registerPotPosition(x, y);
-            }}
-          />
-        )}
+        {isPotEnabled && (() => {
+          // PotAction で使われる変数キーのみを PotArea へ渡す
+          const potVariableKeys = new Set(
+            potActions.flatMap((a) => a.transfers.map((t) => t.variable))
+          );
+          const potVariables = variables.filter((v) => potVariableKeys.has(v.key));
+          return (
+            <PotArea
+              pot={pot}
+              variables={potVariables}
+              isHighlighted={drag.snapTargetIdState === "__pot__"}
+              onDragStart={handleDragStart}
+              onDragUpdate={drag.handleDragUpdate}
+              onDragEnd={drag.handleDragEnd}
+              onPositionMeasured={(x, y) => {
+                drag.registerPotPosition(x, y);
+              }}
+            />
+          );
+        })()}
 
         {/* カウンター */}
         {counterValue !== undefined && (
