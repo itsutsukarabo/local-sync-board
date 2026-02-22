@@ -10,20 +10,41 @@
  *   - ローカル Supabase が起動済み (supabase start)
  *   - マイグレーション適用済み
  */
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   createServiceClient,
-  createTestUser,
-  deleteTestUser,
+  createAnonUser,
+  cleanupAnonUser,
   createTestRoomWithSeats,
   deleteTestRoom,
   makePlayerState,
+  type AnonUser,
 } from "../helpers/supabase";
+
+// ---- クライアント動的差し替えの仕組み ----
+
+const { getClient, setClient } = vi.hoisted(() => {
+  let client: any = null;
+  return {
+    getClient: () => client,
+    setClient: (c: any) => {
+      client = c;
+    },
+  };
+});
+
+vi.mock("../../app/lib/supabase", () => ({
+  get supabase() {
+    return getClient();
+  },
+}));
+
+// roomApi 関数（mock 適用後にインポート）
 import { renameFakePlayer } from "../../app/lib/roomApi";
 
 let admin: SupabaseClient;
-const userIds: string[] = [];
+const users: AnonUser[] = [];
 const roomIds: string[] = [];
 
 beforeEach(() => {
@@ -35,15 +56,15 @@ afterEach(async () => {
     await deleteTestRoom(admin, id);
   }
   roomIds.length = 0;
-  for (const id of userIds) {
-    await deleteTestUser(admin, id);
+  for (const u of users) {
+    await cleanupAnonUser(admin, u.userId);
   }
-  userIds.length = 0;
+  users.length = 0;
 });
 
 async function setupHostAndRoom(fakeUserId: string, fakeDisplayName: string) {
-  const hostId = await createTestUser(admin);
-  userIds.push(hostId);
+  const host = await createAnonUser();
+  users.push(host);
 
   const currentState = makePlayerState([
     { id: fakeUserId, score: 25000, displayName: fakeDisplayName },
@@ -56,12 +77,16 @@ async function setupHostAndRoom(fakeUserId: string, fakeDisplayName: string) {
     null,
   ];
 
-  const roomId = await createTestRoomWithSeats(admin, hostId, {
+  const roomId = await createTestRoomWithSeats(admin, host.userId, {
     currentState,
     seats,
   });
   roomIds.push(roomId);
-  return { hostId, roomId };
+
+  // renameFakePlayer がホストの認証済みクライアントを使うよう差し込む
+  setClient(host.client);
+
+  return { hostId: host.userId, roomId };
 }
 
 describe("renameFakePlayer", () => {
