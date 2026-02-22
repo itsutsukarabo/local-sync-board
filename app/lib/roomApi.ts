@@ -1197,6 +1197,57 @@ export async function updateRoomName(
 }
 
 /**
+ * 自分が作成した過去のルームを取得（テンプレートコピー用）
+ * @param excludeRoomId - 除外するルームID（現在のルーム）
+ * @param layoutMode - フィルタするレイアウトモード
+ * @param limit - 取得件数（デフォルト5）
+ */
+export async function fetchMyPastRooms(
+  excludeRoomId: string,
+  layoutMode: string,
+  limit: number = 5
+): Promise<{
+  rooms: Pick<Room, "id" | "room_name" | "room_code" | "template" | "created_at">[];
+  error: Error | null;
+}> {
+  apiLog("fetchMyPastRooms", { excludeRoomId, layoutMode, limit });
+  try {
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
+
+    if (userError || !user) {
+      throw new Error("ユーザーが認証されていません");
+    }
+
+    const { data, error } = await supabase
+      .from("rooms")
+      .select("id, room_name, room_code, template, created_at")
+      .eq("host_user_id", user.id)
+      .neq("id", excludeRoomId)
+      .filter("template->>layoutMode", "eq", layoutMode)
+      .order("created_at", { ascending: false })
+      .limit(limit);
+
+    if (error) {
+      throw error;
+    }
+
+    return {
+      rooms: (data || []) as Pick<Room, "id" | "room_name" | "room_code" | "template" | "created_at">[],
+      error: null,
+    };
+  } catch (error) {
+    console.error("Error fetching past rooms:", error);
+    return {
+      rooms: [],
+      error: error instanceof Error ? error : new Error("過去のルームの取得に失敗しました"),
+    };
+  }
+}
+
+/**
  * 精算結果を保存し、スコアを初期値にリセット（DB側RPCで原子的に処理）
  * @param roomId - ルームID
  * @param settlement - 精算結果オブジェクト

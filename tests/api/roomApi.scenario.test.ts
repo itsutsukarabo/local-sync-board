@@ -44,6 +44,7 @@ import {
   removeFakePlayer,
   updateCoHosts,
   updateRoomName,
+  fetchMyPastRooms,
 } from "../../app/lib/roomApi";
 import type { GameTemplate } from "../../app/types";
 
@@ -602,5 +603,117 @@ describe("roomApi シナリオテスト: ルーム名", () => {
 
       expect(check!.room_name).toBe("ホストの部屋");
     }
+  });
+});
+
+// ---- fetchMyPastRooms シナリオ ----
+
+describe("roomApi シナリオテスト: fetchMyPastRooms", () => {
+  let admin: SupabaseClient;
+  let host: AnonUser;
+  const roomIdsForCleanup: string[] = [];
+
+  const MAHJONG_TEMPLATE: GameTemplate = {
+    ...TEST_TEMPLATE,
+    layoutMode: "mahjong",
+  };
+
+  const LIST_TEMPLATE: GameTemplate = {
+    ...TEST_TEMPLATE,
+    layoutMode: "list",
+  };
+
+  beforeEach(async () => {
+    admin = createServiceClient();
+    host = await createAnonUser();
+  });
+
+  afterEach(async () => {
+    for (const id of roomIdsForCleanup) {
+      await admin.from("rooms").delete().eq("id", id);
+    }
+    roomIdsForCleanup.length = 0;
+    await cleanupAnonUser(admin, host.userId);
+  });
+
+  it("同 layoutMode のルームのみ返し、現在のルームは除外される", async () => {
+    // ======== 1. ホストが mahjong ルームを2件と list ルームを1件作成 ========
+    setClient(host.client);
+    const { room: room1 } = await createRoom(MAHJONG_TEMPLATE, "麻雀ルーム1");
+    expect(room1).toBeDefined();
+    roomIdsForCleanup.push(room1.id);
+
+    setClient(host.client);
+    const { room: room2 } = await createRoom(MAHJONG_TEMPLATE, "麻雀ルーム2");
+    expect(room2).toBeDefined();
+    roomIdsForCleanup.push(room2.id);
+
+    setClient(host.client);
+    const { room: room3 } = await createRoom(LIST_TEMPLATE, "リストルーム");
+    expect(room3).toBeDefined();
+    roomIdsForCleanup.push(room3.id);
+
+    // ======== 2. room3 (list) から mahjong ルームを検索 → 2件返る ========
+    setClient(host.client);
+    const { rooms: mahjongRooms, error: err1 } = await fetchMyPastRooms(room3.id, "mahjong");
+
+    expect(err1).toBeNull();
+    expect(mahjongRooms).toHaveLength(2);
+    const mahjongIds = mahjongRooms.map((r) => r.id);
+    expect(mahjongIds).toContain(room1.id);
+    expect(mahjongIds).toContain(room2.id);
+    // room3 自身は除外されている
+    expect(mahjongIds).not.toContain(room3.id);
+
+    // ======== 3. room1 (mahjong) から list ルームを検索 → 1件返る ========
+    setClient(host.client);
+    const { rooms: listRooms, error: err2 } = await fetchMyPastRooms(room1.id, "list");
+
+    expect(err2).toBeNull();
+    expect(listRooms).toHaveLength(1);
+    expect(listRooms[0].id).toBe(room3.id);
+    // room1 自身は除外されている
+    expect(listRooms.map((r) => r.id)).not.toContain(room1.id);
+  });
+
+  it("必要なフィールド（id, room_name, room_code, template, created_at）が含まれる", async () => {
+    setClient(host.client);
+    const { room } = await createRoom(MAHJONG_TEMPLATE, "フィールドテスト");
+    expect(room).toBeDefined();
+    roomIdsForCleanup.push(room.id);
+
+    // 別の mahjong ルームを作成してそこから検索
+    setClient(host.client);
+    const { room: room2 } = await createRoom(MAHJONG_TEMPLATE, "検索元");
+    expect(room2).toBeDefined();
+    roomIdsForCleanup.push(room2.id);
+
+    setClient(host.client);
+    const { rooms, error } = await fetchMyPastRooms(room2.id, "mahjong");
+
+    expect(error).toBeNull();
+    expect(rooms.length).toBeGreaterThan(0);
+
+    const first = rooms[0];
+    expect(first.id).toBeDefined();
+    expect(first.room_code).toBeDefined();
+    expect(first.template).toBeDefined();
+    expect(first.created_at).toBeDefined();
+    // room_name は null の可能性もあるがプロパティとして存在する
+    expect("room_name" in first).toBe(true);
+  });
+
+  it("過去ルームが存在しない場合は空配列を返す", async () => {
+    setClient(host.client);
+    const { room } = await createRoom(MAHJONG_TEMPLATE, "唯一のルーム");
+    expect(room).toBeDefined();
+    roomIdsForCleanup.push(room.id);
+
+    // 自分自身を除外すると他に mahjong ルームはない
+    setClient(host.client);
+    const { rooms, error } = await fetchMyPastRooms(room.id, "mahjong");
+
+    expect(error).toBeNull();
+    expect(rooms).toHaveLength(0);
   });
 });

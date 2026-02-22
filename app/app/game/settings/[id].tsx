@@ -29,6 +29,7 @@ import SettlementConfigEditor from "../../../components/settings/SettlementConfi
 import PlayerScoreEditor from "../../../components/settings/PlayerScoreEditor";
 import ResetSection from "../../../components/settings/ResetSection";
 import CoHostEditor from "../../../components/settings/CoHostEditor";
+import CopyTemplateSection from "../../../components/settings/CopyTemplateSection";
 
 export default function RoomSettingsScreen() {
   const router = useRouter();
@@ -379,6 +380,17 @@ function SettingsContent({
             potEnabled={room.template.potEnabled}
           />
         </View>
+
+        {/* テンプレートコピー - 元の作成者のみ表示 */}
+        {user?.id === room.host_user_id && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>テンプレートのコピー</Text>
+            <Text style={styles.sectionDescription}>
+              過去に作成した同じレイアウトのルームの設定をコピーして適用します
+            </Text>
+            <CopyTemplateSection room={room} />
+          </View>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
